@@ -1,0 +1,29 @@
+version: "3.8"
+services:
+  anomaly-detection-service:
+    container_name: nebulous_anomaly_detection
+    # IMPORTANT: If 'image' is specified remember to comment out the 'build' line
+    build: .
+    command: python3 __main__.py /configs/config.yml
+    volumes:
+      - ./configs/:/configs/
+    # IMPORTANT: If 'image' is specified remember to comment out the 'build' line
+    #image: nebulous-anomaly-detection-module:0.1
+    environment:
+      - APPLICATION_ID=24
+      - BROKER_ADDRESS=158.37.63.86
+      - BROKER_PORT=32754
+      - BROKER_USERNAME=admin
+      - BROKER_PASSWORD=admin
+      - RETRY_CONNECT=5
+      - COMPONENT_NAME=anomaly_detector
+      - TOPIC_NAME=anomaly_detection
+      - TARGET_TOPIC=eu.nebulouscloud.monitoring.anomaly_detection
+      - SEND_DELAY=10
+      - VALUE_MIN=0
+      - VALUE_MAX=100
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "500M"
+        max-file: "2"

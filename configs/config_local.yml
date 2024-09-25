@@ -1,0 +1,42 @@
+#ai_last_n_hours: 145
+ai_last_n_hours: 168
+
+
+# ai_last_n_hours_test possible values... False (ai_last_n_minutes_test will be used) or number of hours (an integer between 1 and 24)
+ai_last_n_hours_test: False
+# last_n_minutes_test... ai_last_n_hours_test is False and last_n_minutes_test is an integer between 1 and 1440
+ai_last_n_minutes_test: 10
+
+ai_train: True
+ai_kmeans: True
+ai_nsa: True
+ai_graph: True
+#IP - IT&OT Security Unit
+ai_ip: '172.16.5.15'
+#port - IT&OT Security Unit
+ai_port: 30000
+#IP - Mercabarna
+#ai_ip: '172.20.48.109'
+#port - Mercabarna
+#ai_port: 32092
+ai_charts: ['system.cpu', 'system.ram']
+#ai_charts: ['system.ram']
+ai_dims: ['system.cpu|user','system.cpu|system','system.ram|used']
+#ai_dims: ['system.ram|used']
+ai_interval: 60
+ai_iterations: 5
+ai_nsa_num_samples_to_lag: 5
+ai_nsa_num_samples_to_diff: 1
+ai_nsa_num_samples_to_smooth: 3
+ai_nsa_max_t_cells: 500
+ai_nsa_max_attempts: 10
+ai_nsa_percentage: 0.05
+ai_nsa_algorithm: 2
+ai_nsa_n_neighbors: 5
+ai_nsa_anomaly_rate: 0.10
+ai_nsa_kmeans_anomaly_rate: 0.10
+ai_kmeans_num_samples_to_lag: 5
+ai_kmeans_num_samples_to_diff: 1
+ai_kmeans_num_samples_to_smooth: 3
+ai_kmeans_anomaly_rate: 0.10
+ai_kmeans_max_iterations: 100
