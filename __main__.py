@@ -35,8 +35,8 @@ import numpy as np
 import pandas as pd
 
 # Define constants and configuration variables
-COMPONENT_NAME = 'anomaly_detector'
-TOPIC_NAME = 'anomaly_detected'
+COMPONENT_NAME = os.environ.get('COMPONENT_NAME', 'anomaly_detector')
+TOPIC_NAME = os.environ.get('TOPIC_NAME', 'eu.nebulouscloud.monitoring.device_lost')
 APPLICATION_ID = os.environ.get('APPLICATION_ID', '')
 BROKER_ADDRESS = os.environ.get('BROKER_ADDRESS', '158.37.63.86')
 BROKER_PORT = int(os.environ.get('BROKER_PORT', 32754))
