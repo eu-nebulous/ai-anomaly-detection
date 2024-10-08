@@ -29,13 +29,14 @@ import matplotlib.patches as mpatches
 from sklearn.cluster import KMeans
 from scipy.spatial.distance import cdist
 #!pip install netdata-pandas
-from src.netdata_pandas.data import get_data
+from src.netdata_pandas.data import get_data_with_parent, get_parentchildren
 
 from src.ml import distance_between_points, tCell, NSA
 from sklearn.preprocessing import MinMaxScaler
 import joblib
 import os
 import sys
+import random
 
 # Global variables
 anomaly_bit_max = 1         # Assigned value to anomaly_bit
@@ -87,12 +88,12 @@ def remove_outliers_iqr(df):
     return df
 
 # Get raw data (hours)
-def get_raw_data(hosts, charts, last_n_hours, dims, graph, remove_outliers):
+def get_raw_data(context, TOPIC_NAME, protocol, parent, host, charts, last_n_hours, dims, graph, remove_outliers):
     """
     Retrieve raw data for the last `last_n_hours` hours.
 
     Parameters:
-    hosts (list): Host to retrieve data from.
+    host: Host to retrieve data from.
     charts (list): List of charts to retrieve data from.
     last_n_hours (int): The number of hours to look back.
     dims (list): Dimensions for the data retrieval.
@@ -114,8 +115,8 @@ def get_raw_data(hosts, charts, last_n_hours, dims, graph, remove_outliers):
     #datetime_utcnow = datetime.now(timezone.utc)
     datetime_utcnow = datetime.now()
     
-    print(f"hosts {hosts}")
-    logger.info(f"hosts {hosts}")
+    print(f"host {host}")
+    logger.info(f"host {host}")
     df = None
     i = 0
     while (i * hours_24) < last_n_hours:
@@ -124,7 +125,7 @@ def get_raw_data(hosts, charts, last_n_hours, dims, graph, remove_outliers):
             after = int((datetime_utcnow - timedelta(hours=hours_24*(i+1))).timestamp())
         else:
             after = int((datetime_utcnow - timedelta(hours=last_n_hours)).timestamp())
-        df_new = get_data(hosts=hosts, charts=charts, after=after, before=before)
+        df_new = get_data_with_parent(parent=parent, hosts=host, charts=charts, after=after, before=before, protocol=protocol, context=context, TOPIC_NAME=TOPIC_NAME)
         if df_new is None:      # Means... NO more data period (after, before)
             i = last_n_hours
         else:
@@ -201,12 +202,12 @@ def get_raw_data(hosts, charts, last_n_hours, dims, graph, remove_outliers):
     return df
 
 # Get raw data (minutes)
-def get_raw_data_minutes(hosts, charts, last_n_minutes, dims, remove_outliers):
+def get_raw_data_minutes(context, TOPIC_NAME, protocol, parent, host, charts, last_n_minutes, dims, remove_outliers):
     """
     Retrieve raw data for the last `last_n_minutes` minutes, in chunks of 1440 minutes (24 hours).
 
     Parameters:
-    hosts (list): Host to retrieve data from.
+    host: Host to retrieve data from.
     charts (list): List of charts to retrieve data from.
     last_n_minutes (int): The number of minutes to look back.
     dims (list): Dimensions for the data retrieval.
@@ -224,7 +225,7 @@ def get_raw_data_minutes(hosts, charts, last_n_minutes, dims, remove_outliers):
     before = int(datetime_utcnow.timestamp())
     after = int((datetime_utcnow - timedelta(minutes=min(minutes_1440, last_n_minutes))).timestamp())
     
-    df = get_data(hosts=hosts, charts=charts, after=after, before=before)
+    df = get_data_with_parent(parent=parent, hosts=host, charts=charts, after=after, before=before, protocol=protocol, context=context, TOPIC_NAME=TOPIC_NAME)        
     
     # filter df for just the dims if set
     if len(dims):
@@ -283,8 +284,6 @@ def nsa_train(df, num_samples_to_lag, num_samples_to_diff, num_samples_to_smooth
     # max_t_cells are the max number of detectors
     myNSA = NSA(max_t_cells, max_attempts, dimension, percentage, algorithm, n_neighbors, num_samples_to_lag, num_samples_to_diff, num_samples_to_smooth)
     myNSA.fit(df_preprocessed.values, y_train)
-    
-    joblib.dump(myNSA, 'nsa_model.pkl')
             
     return myNSA
     
@@ -382,35 +381,35 @@ def nsa_inference(myNSA, df, graph):
         figsize = (16,6)
 
         # PCF el eje y escala mal
-        title = '03. Normalized Raw Data to Predict'
+        title = '03.NSA Normalized Raw Data to Predict'
         ax = plt.gca()
         data = df_final[dims].set_index(pd.to_datetime(df_final.index, unit='s'))
         data.plot(title=title, figsize=figsize)
         plt.savefig('src/images/' + title.replace('|', '.') + '.png', dpi=1200)
         plt.close()
             
-        title = '03. Distance Score'
+        title = '03.NSA Distance Score'
         ax = plt.gca()
         data = df_final[['distance_score']].set_index(pd.to_datetime(df_final.index, unit='s'))
         data.plot(title=title, figsize=figsize)
         plt.savefig('src/images/' + title.replace('|', '.') + '.png', dpi=1200)
         plt.close()
             
-        title = '03. Anomaly Bit'
+        title = '03.NSA Anomaly Bit'
         ax = plt.gca()
         data = df_final[['anomaly_bit']].set_index(pd.to_datetime(df_final.index, unit='s'))
         data.plot(title=title, figsize=figsize)
         plt.savefig('src/images/' + title.replace('|', '.') + '.png', dpi=1200)
         plt.close()
 
-        title = '03. (Distance Score, Anomaly Bit)'
+        title = '03.NSA (Distance Score, Anomaly Bit)'
         ax = plt.gca()
         data = df_final[['distance_score', 'anomaly_bit']].set_index(pd.to_datetime(df_final.index, unit='s'))
         data.plot(title=title, figsize=figsize)
         plt.savefig('src/images/' + title.replace('|', '.') + '.png', dpi=1200)
         plt.close()
 
-        title = '03. Combined (Normalized Raw, Score, Bit)'
+        title = '03.NSA Combined (Normalized Raw, Score, Bit)'
         ax = plt.gca()
         #df_final_normalized = (df_final-df_final.min())/(df_final.max()-df_final.min())
         #data = df_final_normalized.set_index(pd.to_datetime(df_final_normalized.index, unit='s'))
@@ -466,13 +465,9 @@ def kmeans_train(df, num_samples_to_lag, num_samples_to_diff, num_samples_to_smo
         models[dim]['train_raw_anomaly_score_min'] = min(train_raw_anomaly_scores)
         models[dim]['train_raw_anomaly_score_max'] = max(train_raw_anomaly_scores)
     
-    joblib.dump(models, 'kmeans_models.pkl')
-            
     return models
 
-def kmeans_inference(models, df, graph):
-
-    dimension_anomaly_score_threshold = 0.10
+def kmeans_inference(models, df, graph, ai_kmeans_dim_anomaly_score):
 
     # initialize dictionary for storing anomaly scores for each dim
     anomaly_scores = {
@@ -551,15 +546,15 @@ def kmeans_inference(models, df, graph):
                 # normalize
                 anomaly_score = (raw_anomaly_score - train_raw_anomaly_score_min) / train_raw_anomaly_score_range
                 
-                # The Netdata Agent does not actually store the normalized_anomaly_score since doing so would require more storage
-                # space for each metric, essentially doubling the amount of metrics that need to be stored. Instead, the Netdata Agent
-                # makes use of an existing bit (the anomaly bit) in the internal storage representation used by netdata. So if the 
-                # normalized_anomaly_score passed the dimension_anomaly_score_threshold netdata will flip the corresponding anomaly_bit
-                # from 0 to 1 to signify that the observation the scored feature vector is considered "anomalous". 
+                # The Netdata Agent does not actually store the normalized_anomaly_score since doing so would require more storage space
+                # for each metric, essentially doubling the amount of metrics that need to be stored. Instead, the Netdata Agent makes
+                # use of an existing bit (the anomaly bit) in the internal storage representation used by netdata. So if the 
+                # normalized_anomaly_score passed the ai_kmeans_dim_anomaly_score (dimension anomaly score threshold) netdata will flip the
+                # corresponding anomaly_bit from 0 to 1 to signify that the observation the scored feature vector is considered "anomalous". 
                 # All without any extra storage overhead required for the Netdata Agent database! Yes it's almost magic :)
 
                 # get anomaly bit
-                anomaly_bit = anomaly_bit_max if anomaly_score >= dimension_anomaly_score_threshold else 0
+                anomaly_bit = anomaly_bit_max if anomaly_score >= ai_kmeans_dim_anomaly_score else 0
 
                 #logger.info(f'anomaly_score {anomaly_score}')
                 #logger.info(f'anomaly_bit {anomaly_bit}')
@@ -607,28 +602,28 @@ def kmeans_inference(models, df, graph):
             # create a dim with the raw data, anomaly score and anomaly bit for the dim
             df_final_dim = df_final[[dim,f'{dim}_anomaly_score',f'{dim}_anomaly_bit']]
             
-            title = f'04. Normalized Raw Data to Predict - {dim}'
+            title = f'04.k-means Normalized Raw Data to Predict - {dim}'
             ax = plt.gca()
             data = df_final_dim[[dim]].set_index(pd.to_datetime(df_final_dim.index, unit='s'))
             data.plot(title=title, figsize=figsize)
             plt.savefig('src/images/' + title.replace('|', '.') + '.png', dpi=1200)
             plt.close()
             
-            title = f'04. Anomaly Score - {dim}'
+            title = f'04.k-means Anomaly Score - {dim}'
             ax = plt.gca()
             data = df_final_dim[[f'{dim}_anomaly_score']].set_index(pd.to_datetime(df_final_dim.index, unit='s'))
             data.plot(title=title, figsize=figsize)
             plt.savefig('src/images/' + title.replace('|', '.') + '.png', dpi=1200)
             plt.close()
 
-            title = f'04. Anomaly Bit - {dim}'
+            title = f'04.k-means Anomaly Bit - {dim}'
             ax = plt.gca()
             data = df_final_dim[[f'{dim}_anomaly_bit']].set_index(pd.to_datetime(df_final_dim.index, unit='s'))
             data.plot(title=title, figsize=figsize)
             plt.savefig('src/images/' + title.replace('|', '.') + '.png', dpi=1200)
             plt.close()
 
-            title = f'04. Combined (Normalized Raw, Score, Bit) - {dim}'
+            title = f'04.k-means Combined (Normalized Raw, Score, Bit) - {dim}'
             ax = plt.gca()
             #df_final_dim_normalized = (df_final_dim-df_final_dim.min())/(df_final_dim.max()-df_final_dim.min())
             #data = df_final_dim_normalized.set_index(pd.to_datetime(df_final_dim_normalized.index, unit='s'))
@@ -672,11 +667,12 @@ class Args:
 
 def Main_Loop(context, TOPIC_NAME,
         ai_last_n_hours, ai_last_n_hours_test, ai_last_n_minutes_test, ai_train, ai_kmeans, ai_nsa, 
-        ai_graph, ai_ip, ai_port, ai_charts, ai_dims, ai_interval, ai_iterations,
+        ai_graph, ai_protocol, ai_ip, ai_port, ai_parent_node, ai_charts, ai_dims, ai_interval, ai_iterations,
         ai_nsa_num_samples_to_lag, ai_nsa_num_samples_to_diff, ai_nsa_num_samples_to_smooth, 
         ai_nsa_max_t_cells, ai_nsa_max_attempts, ai_nsa_percentage, ai_nsa_algorithm, ai_nsa_n_neighbors,
         ai_kmeans_num_samples_to_lag, ai_kmeans_num_samples_to_diff, ai_kmeans_num_samples_to_smooth,
-        ai_nsa_anomaly_rate, ai_kmeans_anomaly_rate, ai_nsa_kmeans_anomaly_rate, ai_kmeans_max_iterations):
+        ai_nsa_anomaly_rate, ai_kmeans_anomaly_rate, ai_nsa_kmeans_anomaly_rate, ai_kmeans_max_iterations,
+        ai_kmeans_dim_anomaly_score):
     
     print('Starting main loop...')
     
@@ -690,22 +686,26 @@ def Main_Loop(context, TOPIC_NAME,
     args.kmeans = ai_kmeans
     args.nsa = ai_nsa
     args.graph = ai_graph
-    
-    print(f"args.__dict__ {args.__dict__}")
-    logger.info(f"args.__dict__ {args.__dict__}")
 
     # data params
-    hosts = [f'{ai_ip}:{ai_port}']
-    #charts = ['system.cpu','system.ram','system.ip','system.io','system.load']
-    #charts = ['system.cpu','system.ip','system.io']
-    #charts = ['system.cpu','system.ram']
-    #charts = ['system.cpu','system.ram','system.io']
-    charts = ai_charts
+    parent = f'{ai_ip}:{ai_port}'
+    parentchildren = get_parentchildren(parent, ai_protocol)  
+    hosts = parentchildren
+    if (not ai_parent_node) and (len(parentchildren) > 1):
+        hosts.pop(0)
+        
+    #hosts = ['toronto.netdata.rocks']
     
-    # if want to just focus on a subset of dims
-    #dims = ['system.cpu|user'] 
-    #dims = ['system.cpu|user','system.cpu|system','system.ram|used']
-    #dims = ['system.cpu|user','system.cpu|system','system.ram|used','system.io|in','system.io|out']
+    # # Choose 3 children
+    # if len(hosts) >= 3:
+        # hosts = random.sample(hosts, 3)
+        
+    print(f'parent {parent}')
+    logger.info(f'parent {parent}')
+    print(f'hosts {hosts}')
+    logger.info(f'hosts {hosts}')
+   
+    charts = ai_charts    
     dims = ai_dims
     args.interval = ai_interval
     args.iterations = ai_iterations
@@ -714,6 +714,17 @@ def Main_Loop(context, TOPIC_NAME,
     args.nsa_anomaly_rate = ai_nsa_anomaly_rate
     args.kmeans_anomaly_rate = ai_kmeans_anomaly_rate
     args.nsa_kmeans_anomaly_rate = ai_nsa_kmeans_anomaly_rate
+
+    print(f"args.__dict__ {args.__dict__}")
+    logger.info(f"args.__dict__ {args.__dict__}")
+
+    info_hosts = {
+        host: {
+            'scaler' : None,
+            'myNSA': None,
+            'myKmeans': None
+        } for host in hosts
+    }
 
     if args.graph:
         if not os.path.exists('src/images'):
@@ -730,66 +741,77 @@ def Main_Loop(context, TOPIC_NAME,
         myNSA = None
         myKmeans = None
        
-        print(f'/n/nTraining... every {args.iterations} iterations.')
-        logger.info(f'/n/nTraining... every {args.iterations} iterations.')
+        print(f'\n\nTraining... every {args.iterations} iterations.')
+        logger.info(f'\n\nTraining... every {args.iterations} iterations.')
         print(f'train: {args.train}')
         logger.info(f'train: {args.train}')
         if args.train:
         
-            print("Creating the models...")
-            logger.info("Creating the models...")
-            df = get_raw_data(hosts, charts, args.last_n_hours, dims, args.graph, remove_outliers=True)    # Default 145 = 6 * hours_24 + 1
+            for host in hosts:
+                print(f"Creating the models... host {host}")
+                logger.info(f"Creating the models... host {host}")
+                df = get_raw_data(context, TOPIC_NAME, ai_protocol, parent, host, charts, args.last_n_hours, dims, args.graph, remove_outliers=True)    # Default 145 = 6 * hours_24 + 1
 
-            scaler_min = 0
-            scaler_max = 1   
-            scaler = MinMaxScaler(feature_range=(scaler_min, scaler_max))
-            scaler.fit(df)
-            # saving the scaler model
-            joblib.dump(scaler, 'scaler_model.pkl')
-            df_scaled = scaler.transform(df)        
-            df = pd.DataFrame(df_scaled, index=df.index, columns=df.columns)
-
-            if args.nsa:
-            
-                print("Creating the model NSA...")
-                logger.info("Creating the model NSA...")
-                myNSA = nsa_train(df, ai_nsa_num_samples_to_lag, ai_nsa_num_samples_to_diff, ai_nsa_num_samples_to_smooth, 
-                    ai_nsa_max_t_cells, ai_nsa_max_attempts, ai_nsa_percentage, ai_nsa_algorithm, ai_nsa_n_neighbors)
-                
-            if args.kmeans:
-            
-                print("Creating the model kmeans...")
-                logger.info("Creating the model kmeans...")
-                myKmeans = kmeans_train(df, ai_kmeans_num_samples_to_lag, ai_kmeans_num_samples_to_diff, ai_kmeans_num_samples_to_smooth,
-                    ai_kmeans_max_iterations)
-        else:
-            
-            if os.path.exists('scaler_model.pkl'):
-                print("Loading scaler model...")
-                logger.info("Loading scaler model...")
-                scaler = joblib.load('scaler_model.pkl')
+                scaler_min = 0
+                scaler_max = 1   
+                scaler = MinMaxScaler(feature_range=(scaler_min, scaler_max))
+                scaler.fit(df)
+                # saving the scaler model
+                joblib.dump(scaler, f'scaler_model_{host.replace(":", "_")}.pkl')
+                df_scaled = scaler.transform(df)        
+                df = pd.DataFrame(df_scaled, index=df.index, columns=df.columns)
+                info_hosts[host]['scaler'] = scaler
 
                 if args.nsa:
-                    if os.path.exists('nsa_model.pkl'):
-                        logger.info("Loading nsa model...")
-                        myNSA = joblib.load('nsa_model.pkl')
-                    else:
-                        logger.info(f"Error. The file 'nsa_model.pkl' does not exist. Please train the nsa algorithm before performing inferences.")
-                        print(f"Error. The file 'nsa_model.pkl' does not exist. Please train the nsa algorithm before performing inferences.")
-                        everything_ok = False
+                
+                    print(f"Creating the model NSA... host {host}")
+                    logger.info(f"Creating the model NSA... host {host}")
+                    myNSA = nsa_train(df, ai_nsa_num_samples_to_lag, ai_nsa_num_samples_to_diff, ai_nsa_num_samples_to_smooth, 
+                        ai_nsa_max_t_cells, ai_nsa_max_attempts, ai_nsa_percentage, ai_nsa_algorithm, ai_nsa_n_neighbors)
+                    joblib.dump(myNSA, f'nsa_model_{host.replace(":", "_")}.pkl')
+                    info_hosts[host]['myNSA'] = myNSA
                     
                 if args.kmeans:
-                    if os.path.exists('kmeans_models.pkl'):
-                        logger.info("Loading kmeans models...")
-                        myKmeans = joblib.load('kmeans_models.pkl')
-                    else:
-                        logger.info(f"Error. The file 'kmeans_models.pkl' does not exist. Please train the kmeans algorithm before performing inferences.")
-                        print(f"Error. The file 'kmeans_models.pkl' does not exist. Please train the kmeans algorithm before performing inferences.")
-                        everything_ok = False
-            else:
-                logger.info(f"Error. The file 'scaler_model.pkl' does not exist. Please train an algorithm before performing inferences.")
-                print(f"Error. The file 'scaler_model.pkl' does not exist. Please train an algorithm before performing inferences.")
-                everything_ok = False
+                
+                    print(f"Creating the model kmeans... host {host}")
+                    logger.info(f"Creating the model kmeans... host {host}")
+                    myKmeans = kmeans_train(df, ai_kmeans_num_samples_to_lag, ai_kmeans_num_samples_to_diff, ai_kmeans_num_samples_to_smooth,
+                        ai_kmeans_max_iterations)
+                    joblib.dump(myKmeans, f'kmeans_models_{host.replace(":", "_")}.pkl')
+                    info_hosts[host]['myKmeans'] = myKmeans
+            
+        else:
+            
+            for host in hosts:
+                if os.path.exists(f'scaler_model_{host.replace(":", "_")}.pkl'):
+                    print(f"Loading scaler model... host {host}")
+                    logger.info(f"Loading scaler model... host {host}")
+                    scaler = joblib.load(f'scaler_model_{host.replace(":", "_")}.pkl')
+                    info_hosts[host]['scaler'] = scaler
+
+                    if args.nsa:
+                        if os.path.exists(f'nsa_model_{host.replace(":", "_")}.pkl'):
+                            logger.info(f'Loading nsa model... host {host}')
+                            myNSA = joblib.load(f'nsa_model_{host.replace(":", "_")}.pkl')
+                            info_hosts[host]['myNSA'] = myNSA
+                        else:
+                            logger.info(f'Error. The file nsa_model_{host.replace(":", "_")}.pkl does not exist. Please train the nsa algorithm before performing inferences.')
+                            print(f'Error. The file nsa_model_{host.replace(":", "_")}.pkl does not exist. Please train the nsa algorithm before performing inferences.')
+                            everything_ok = False
+                        
+                    if args.kmeans:
+                        if os.path.exists(f'kmeans_models_{host.replace(":", "_")}.pkl'):
+                            logger.info(f'Loading kmeans models... host {host}')
+                            myKmeans = joblib.load(f'kmeans_models_{host.replace(":", "_")}.pkl')
+                            info_hosts[host]['myKmeans'] = myKmeans
+                        else:
+                            logger.info(f'Error. The file kmeans_models_{host.replace(":", "_")}.pkl does not exist. Please train the kmeans algorithm before performing inferences.')
+                            print(f'Error. The file kmeans_models_{host.replace(":", "_")}.pkl does not exist. Please train the kmeans algorithm before performing inferences.')
+                            everything_ok = False
+                else:
+                    logger.info(f'Error. The file scaler_model_{host.replace(":", "_")}.pkl does not exist. Please train an algorithm before performing inferences.')
+                    print(f'Error. The file scaler_model_{host.replace(":", "_")}.pkl does not exist. Please train an algorithm before performing inferences.')
+                    everything_ok = False
 
         #while True:
         jj = 1
@@ -804,151 +826,160 @@ def Main_Loop(context, TOPIC_NAME,
             anomaly_data3 = {}
 
             if args.last_n_hours_test or args.last_n_minutes_test:
+                
+                # Wait a while before getting more data (optional)
+                if jj > 1 or not args.train: 
+                    time.sleep(args.interval)                
+
+                for host in hosts:
             
-                if args.last_n_hours_test and args.last_n_hours_test <= 24:
-                
-                    # retrieve last hours to predict
-                    df = get_raw_data(hosts, charts, args.last_n_hours_test, dims, args.graph, remove_outliers=False)
-                
-                else:
-                
-                    if args.last_n_minutes_test and args.last_n_minutes_test <= 1440:    # 24 hours in minutes
+                    if args.last_n_hours_test and args.last_n_hours_test <= 24:
                     
-                        # retrieve last minutes to predict
-                        df = get_raw_data_minutes(hosts, charts, args.last_n_minutes_test, dims, remove_outliers=False)
-
+                        # retrieve last hours to predict
+                        df = get_raw_data(context, TOPIC_NAME, ai_protocol, parent, host, charts, args.last_n_hours_test, dims, args.graph, remove_outliers=False)
+                    
                     else:
-                        logger.info(f"Error. 'last_n_hours_test' should be at most 24 or 'last_n_minutes_test' should be at most 1440. Both parameters cannot be False.")
-                        print(f"Error. 'last_n_hours_test' should be at most 24 or 'last_n_minutes_test' should be at most 1440. Both parameters cannot be False.")
-                        everything_ok = False
-
-                if everything_ok:
-
-                    # Wait a while before getting more data (optional)
-                    if jj > 1 or not args.train: 
-                        time.sleep(args.interval)
-
-                    df_scaled = scaler.transform(df)        
-                    df = pd.DataFrame(df_scaled, index=df.index, columns=df.columns)            
-
-                    if args.nsa:
-
-                        df_final = nsa_inference(myNSA, df, args.graph)
+                    
+                        if args.last_n_minutes_test and args.last_n_minutes_test <= 1440:    # 24 hours in minutes
                         
-                        # window_anomaly_rate to give an alarm
-                        window_anomaly_rate = df_final['anomaly_bit'].sum() * 100 / (df_final.shape[0] * anomaly_bit_max)
+                            # retrieve last minutes to predict
+                            df = get_raw_data_minutes(context, TOPIC_NAME, ai_protocol, parent, host, charts, args.last_n_minutes_test, dims, remove_outliers=False)
 
-                        print(f'\n\n******** NSA (anomaly_bit)')
-                        print(f'window_anomaly_rate = {window_anomaly_rate}%')
-                        print(f'This means the "anomaly rate" within the last period ({df_final.index.min()}, {df_final.index.max()}) was {window_anomaly_rate}%')
-                        print(f'Another way to think of this is that {window_anomaly_rate}% of the observations during the last window were considered anomalous based on the latest trained model.')
-                        logger.info(f'\n\n******** NSA (anomaly_bit)')
-                        logger.info(f'window_anomaly_rate = {window_anomaly_rate}%')
-                        logger.info(f'This means the "anomaly rate" within the last period ({df_final.index.min()}, {df_final.index.max()}) was {window_anomaly_rate}%')
-                        logger.info(f'This means the "anomaly rate" within the last period was {window_anomaly_rate}%')
-                        logger.info(f'Another way to think of this is that {window_anomaly_rate}% of the observations during the last window were considered anomalous based on the latest trained model.')
-                        
-                        if window_anomaly_rate > args.nsa_anomaly_rate:
-                            print('+++++++++++++++ NSA ALERT +++++++++++++++')
-                            logger.info('+++++++++++++++ NSA ALERT +++++++++++++++')
-                            anomaly_data1 = {
-                                "anomaly": {
-                                    "algorithm": "nsa",
-                                    "window_anomaly_rate": window_anomaly_rate,
-                                    "window_start": df_final.index.min(),
-                                    "window_end": df_final.index.max(),
-                                    "iteration": jj,
-                                    "data": df_final
-                                }
-                            }                
-                    if args.kmeans:
+                        else:
+                            logger.info(f"Error. 'last_n_hours_test' should be at most 24 or 'last_n_minutes_test' should be at most 1440. Both parameters cannot be False.")
+                            print(f"Error. 'last_n_hours_test' should be at most 24 or 'last_n_minutes_test' should be at most 1440. Both parameters cannot be False.")
+                            everything_ok = False
 
-                        df_final2 = kmeans_inference(myKmeans, df, args.graph)
-                        
-                        # Select columns whose name contains "_anomaly_bit" and then rows where value != 0 for all
-                        anomaly_bit_columns = [col for col in df_final2.columns if "_anomaly_bit" in col]            
-                        filtered_df_final = df_final2[(df_final2[anomaly_bit_columns] != 0).all(axis=1)]
-                        window_anomaly_rate = filtered_df_final.shape[0] * 100 / (df_final2.shape[0] * anomaly_bit_max)
-                        
-                        print(f'\n\n******** k-means (_anomaly_bit)')
-                        print(f'window_anomaly_rate = {window_anomaly_rate}%')
-                        print(f'This means the "anomaly rate" within the last period ({df_final2.index.min()}, {df_final2.index.max()}) was {window_anomaly_rate}%')
-                        print(f'Another way to think of this is that {window_anomaly_rate}% of the observations during the last window were considered anomalous based on the latest trained model.')
-                        logger.info(f'\n\n******** k-means (_anomaly_bit)')
-                        logger.info(f'window_anomaly_rate = {window_anomaly_rate}%')
-                        logger.info(f'This means the "anomaly rate" within the last period ({df_final2.index.min()}, {df_final2.index.max()}) was {window_anomaly_rate}%')
-                        logger.info(f'This means the "anomaly rate" within the last period was {window_anomaly_rate}%')
-                        logger.info(f'Another way to think of this is that {window_anomaly_rate}% of the observations during the last window were considered anomalous based on the latest trained model.')
+                    if everything_ok:
 
-                        if window_anomaly_rate > args.kmeans_anomaly_rate:
-                            print('+++++++++++++++ K-Means ALERT +++++++++++++++')
-                            logger.info('+++++++++++++++ K-Means ALERT +++++++++++++++')
-                            anomaly_data2 = {
-                                "anomaly": {
-                                    "algorithm": "kmeans",
-                                    "window_anomaly_rate": window_anomaly_rate,
-                                    "window_start": df_final2.index.min(),
-                                    "window_end": df_final2.index.max(),
-                                    "iteration": jj,
-                                    "data": df_final2
-                                }
-                            }
+                        scaler = info_hosts[host]['scaler']
+                        df_scaled = scaler.transform(df)        
+                        df = pd.DataFrame(df_scaled, index=df.index, columns=df.columns)            
 
                         if args.nsa:
-                            columns = df_final.columns           
-                            for column in df_final2.columns:
-                                if column not in columns:
-                                    df_final = df_final.join(df_final2[column], how='outer')
-                            df_final = df_final.dropna()
-                        else:
-                            df_final = df_final2
 
-                    if args.nsa and args.kmeans:
+                            myNSA = info_hosts[host]['myNSA']
+                            df_final = nsa_inference(myNSA, df, args.graph)
+                            
+                            # window_anomaly_rate to give an alarm
+                            window_anomaly_rate = df_final['anomaly_bit'].sum() * 100 / (df_final.shape[0] * anomaly_bit_max)
 
-                        # Select columns whose name contains "anomaly_bit" and then rows where value != 0 for all
-                        anomaly_bit_columns = [col for col in df_final.columns if "anomaly_bit" in col]
-                        filtered_df_final = df_final[(df_final[anomaly_bit_columns] != 0).all(axis=1)]
-                        window_anomaly_rate = filtered_df_final.shape[0] * 100 / (df_final.shape[0] * anomaly_bit_max)
-                        
-                        print(f'\n\n******** NSA & k-means (anomaly_bit & _anomaly_bit)')
-                        print(f'window_anomaly_rate = {window_anomaly_rate}%')
-                        print(f'This means the "anomaly rate" within the last period ({df_final.index.min()}, {df_final.index.max()}) was {window_anomaly_rate}%')
-                        print(f'Another way to think of this is that {window_anomaly_rate}% of the observations during the last window were considered anomalous based on the latest trained model.')
-                        logger.info(f'\n\n******** NSA & k-means (anomaly_bit & _anomaly_bit)')
-                        logger.info(f'window_anomaly_rate = {window_anomaly_rate}%')
-                        logger.info(f'This means the "anomaly rate" within the last period ({df_final.index.min()}, {df_final.index.max()}) was {window_anomaly_rate}%')
-                        logger.info(f'This means the "anomaly rate" within the last period was {window_anomaly_rate}%')
-                        logger.info(f'Another way to think of this is that {window_anomaly_rate}% of the observations during the last window were considered anomalous based on the latest trained model.')
+                            print(f'\n\n******** NSA (anomaly_bit)')
+                            print(f'window_anomaly_rate = {window_anomaly_rate}%')
+                            print(f'This means the "anomaly rate" within the last period ({df_final.index.min()}, {df_final.index.max()}) was {window_anomaly_rate}%')
+                            print(f'Another way to think of this is that {window_anomaly_rate}% of the observations during the last window were considered anomalous based on the latest trained model.')
+                            logger.info(f'\n\n******** NSA (anomaly_bit)')
+                            logger.info(f'window_anomaly_rate = {window_anomaly_rate}%')
+                            logger.info(f'This means the "anomaly rate" within the last period ({df_final.index.min()}, {df_final.index.max()}) was {window_anomaly_rate}%')
+                            logger.info(f'This means the "anomaly rate" within the last period was {window_anomaly_rate}%')
+                            logger.info(f'Another way to think of this is that {window_anomaly_rate}% of the observations during the last window were considered anomalous based on the latest trained model.')
+                            
+                            if window_anomaly_rate > args.nsa_anomaly_rate:
+                                print('+++++++++++++++ NSA ALERT +++++++++++++++')
+                                logger.info('+++++++++++++++ NSA ALERT +++++++++++++++')
+                                anomaly_data1 = {
+                                    "anomaly": {
+                                        "algorithm": "nsa",
+                                        "window_anomaly_rate": window_anomaly_rate,
+                                        "window_start": df_final.index.min(),
+                                        "window_end": df_final.index.max(),
+                                        "iteration": jj,
+                                        "data": df_final
+                                    }
+                                }                
 
-                        if window_anomaly_rate > args.nsa_kmeans_anomaly_rate:
-                            print('+++++++++++++++ NSA & K-Means ALERT +++++++++++++++')
-                            logger.info('+++++++++++++++ NSA & K-Means ALERT +++++++++++++++')
-                            anomaly_data3 = {
-                                "anomaly": {
-                                    "algorithm": "nsa_and_kmeans",
-                                    "window_anomaly_rate": window_anomaly_rate,
-                                    "window_start": df_final.index.min(),
-                                    "window_end": df_final.index.max(),                                
-                                    "iteration": jj,
-                                    "data": df_final
+                        if args.kmeans:
+
+                            myKmeans = info_hosts[host]['myKmeans']
+                            df_final2 = kmeans_inference(myKmeans, df, args.graph, ai_kmeans_dim_anomaly_score)
+                            
+                            # Select columns whose name contains "_anomaly_bit" and then rows where value != 0 for all
+                            anomaly_bit_columns = [col for col in df_final2.columns if "_anomaly_bit" in col]            
+                            filtered_df_final = df_final2[(df_final2[anomaly_bit_columns] != 0).all(axis=1)]
+                            window_anomaly_rate = filtered_df_final.shape[0] * 100 / (df_final2.shape[0] * anomaly_bit_max)
+                            
+                            print(f'\n\n******** k-means (_anomaly_bit)')
+                            print(f'window_anomaly_rate = {window_anomaly_rate}%')
+                            print(f'This means the "anomaly rate" within the last period ({df_final2.index.min()}, {df_final2.index.max()}) was {window_anomaly_rate}%')
+                            print(f'Another way to think of this is that {window_anomaly_rate}% of the observations during the last window were considered anomalous based on the latest trained model.')
+                            logger.info(f'\n\n******** k-means (_anomaly_bit)')
+                            logger.info(f'window_anomaly_rate = {window_anomaly_rate}%')
+                            logger.info(f'This means the "anomaly rate" within the last period ({df_final2.index.min()}, {df_final2.index.max()}) was {window_anomaly_rate}%')
+                            logger.info(f'This means the "anomaly rate" within the last period was {window_anomaly_rate}%')
+                            logger.info(f'Another way to think of this is that {window_anomaly_rate}% of the observations during the last window were considered anomalous based on the latest trained model.')
+
+                            if window_anomaly_rate > args.kmeans_anomaly_rate:
+                                print('+++++++++++++++ K-Means ALERT +++++++++++++++')
+                                logger.info('+++++++++++++++ K-Means ALERT +++++++++++++++')
+                                anomaly_data2 = {
+                                    "anomaly": {
+                                        "algorithm": "kmeans",
+                                        "window_anomaly_rate": window_anomaly_rate,
+                                        "window_start": df_final2.index.min(),
+                                        "window_end": df_final2.index.max(),
+                                        "iteration": jj,
+                                        "data": df_final2
+                                    }
                                 }
-                            }
 
-                    if anomaly_data1:
-                        if context.has_publisher(TOPIC_NAME):
-                            problem_counter = problem_counter + 1
-                            print('  Sending anomally report #' + str(problem_counter))
-                            context.publishers[TOPIC_NAME].send(anomaly_data1)
-                    if anomaly_data2:
-                        if context.has_publisher(TOPIC_NAME):
-                            problem_counter = problem_counter + 1
-                            print('  Sending anomally report #' + str(problem_counter))
-                            context.publishers[TOPIC_NAME].send(anomaly_data2)
-                    if anomaly_data3:
-                        if context.has_publisher(TOPIC_NAME):
-                            problem_counter = problem_counter + 1
-                            print('  Sending anomally report #' + str(problem_counter))
-                            context.publishers[TOPIC_NAME].send(anomaly_data3)
+                            if args.nsa:
+                                columns = df_final.columns           
+                                for column in df_final2.columns:
+                                    if column not in columns:
+                                        df_final = df_final.join(df_final2[column], how='outer')
+                                df_final = df_final.dropna()
+                            else:
+                                df_final = df_final2
+
+                        if args.nsa and args.kmeans:
+
+                            # Select columns whose name contains "anomaly_bit" and then rows where value != 0 for all
+                            anomaly_bit_columns = [col for col in df_final.columns if "anomaly_bit" in col]
+                            filtered_df_final = df_final[(df_final[anomaly_bit_columns] != 0).all(axis=1)]
+                            window_anomaly_rate = filtered_df_final.shape[0] * 100 / (df_final.shape[0] * anomaly_bit_max)
+                            
+                            print(f'\n\n******** NSA & k-means (anomaly_bit & _anomaly_bit)')
+                            print(f'window_anomaly_rate = {window_anomaly_rate}%')
+                            print(f'This means the "anomaly rate" within the last period ({df_final.index.min()}, {df_final.index.max()}) was {window_anomaly_rate}%')
+                            print(f'Another way to think of this is that {window_anomaly_rate}% of the observations during the last window were considered anomalous based on the latest trained model.')
+                            logger.info(f'\n\n******** NSA & k-means (anomaly_bit & _anomaly_bit)')
+                            logger.info(f'window_anomaly_rate = {window_anomaly_rate}%')
+                            logger.info(f'This means the "anomaly rate" within the last period ({df_final.index.min()}, {df_final.index.max()}) was {window_anomaly_rate}%')
+                            logger.info(f'This means the "anomaly rate" within the last period was {window_anomaly_rate}%')
+                            logger.info(f'Another way to think of this is that {window_anomaly_rate}% of the observations during the last window were considered anomalous based on the latest trained model.')
+
+                            if window_anomaly_rate > args.nsa_kmeans_anomaly_rate:
+                                print('+++++++++++++++ NSA & K-Means ALERT +++++++++++++++')
+                                logger.info('+++++++++++++++ NSA & K-Means ALERT +++++++++++++++')
+                                anomaly_data3 = {
+                                    "anomaly": {
+                                        "algorithm": "nsa_and_kmeans",
+                                        "window_anomaly_rate": window_anomaly_rate,
+                                        "window_start": df_final.index.min(),
+                                        "window_end": df_final.index.max(),                                
+                                        "iteration": jj,
+                                        "data": df_final
+                                    }
+                                }
+
+                        if anomaly_data1:
+                            if context.has_publisher(TOPIC_NAME):
+                                problem_counter = problem_counter + 1
+                                logger.info('  nsa -> Sending anomally report #' + str(problem_counter))
+                                print('  nsa -> Sending anomally report #' + str(problem_counter))
+                                context.publishers[TOPIC_NAME].send(anomaly_data1)
+                        if anomaly_data2:
+                            if context.has_publisher(TOPIC_NAME):
+                                problem_counter = problem_counter + 1
+                                logger.info('  k-means -> Sending anomally report #' + str(problem_counter))
+                                print('  k-means -> Sending anomally report #' + str(problem_counter))
+                                context.publishers[TOPIC_NAME].send(anomaly_data2)
+                        if anomaly_data3:
+                            if context.has_publisher(TOPIC_NAME):
+                                problem_counter = problem_counter + 1
+                                logger.info('  nsa + k-means -> Sending anomally report #' + str(problem_counter))
+                                print('  nsa + k-means -> Sending anomally report #' + str(problem_counter))
+                                context.publishers[TOPIC_NAME].send(anomaly_data3)
 
             else:
                 

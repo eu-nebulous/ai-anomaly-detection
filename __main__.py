@@ -77,8 +77,10 @@ class Bootstrap(ConnectorHandler):
         ai_kmeans = Config.AI_KMEANS
         ai_nsa = Config.AI_NSA
         ai_graph = Config.AI_GRAPH
+        ai_protocol = Config.AI_PROTOCOL
         ai_ip = Config.AI_IP
         ai_port = Config.AI_PORT
+        ai_parent_node = Config.AI_PARENT_NODE
         ai_charts = Config.AI_CHARTS
         ai_dims = Config.AI_DIMS
         ai_interval = Config.AI_INTERVAL
@@ -97,16 +99,18 @@ class Bootstrap(ConnectorHandler):
         ai_kmeans_num_samples_to_diff = Config.AI_KMEANS_NUM_SAMPLES_TO_DIFF
         ai_kmeans_num_samples_to_smooth = Config.AI_KMEANS_NUM_SAMPLES_TO_SMOOTH
         ai_kmeans_anomaly_rate = Config.AI_KMEANS_ANOMALY_RATE
-        ai_kmeans_max_iterations = Config.AI_KMEANS_MAX_ITERATIONS            
+        ai_kmeans_max_iterations = Config.AI_KMEANS_MAX_ITERATIONS  
+        ai_kmeans_dim_anomaly_score = Config.AI_KMEANS_DIM_ANOMALY_SCORE        
             
         
         t1 = threading.Thread(target=Main_Loop, args=(context, TOPIC_NAME,
         ai_last_n_hours, ai_last_n_hours_test, ai_last_n_minutes_test, ai_train, ai_kmeans, ai_nsa, 
-        ai_graph, ai_ip, ai_port, ai_charts, ai_dims, ai_interval, ai_iterations,
+        ai_graph, ai_protocol, ai_ip, ai_port, ai_parent_node, ai_charts, ai_dims, ai_interval, ai_iterations,
         ai_nsa_num_samples_to_lag, ai_nsa_num_samples_to_diff, ai_nsa_num_samples_to_smooth, 
         ai_nsa_max_t_cells, ai_nsa_max_attempts, ai_nsa_percentage, ai_nsa_algorithm, ai_nsa_n_neighbors,
         ai_kmeans_num_samples_to_lag, ai_kmeans_num_samples_to_diff, ai_kmeans_num_samples_to_smooth,
-        ai_nsa_anomaly_rate, ai_kmeans_anomaly_rate, ai_nsa_kmeans_anomaly_rate, ai_kmeans_max_iterations))
+        ai_nsa_anomaly_rate, ai_kmeans_anomaly_rate, ai_nsa_kmeans_anomaly_rate, ai_kmeans_max_iterations,
+        ai_kmeans_dim_anomaly_score))
         
         t1.start()
 
