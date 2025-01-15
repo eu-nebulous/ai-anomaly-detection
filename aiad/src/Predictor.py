@@ -276,7 +276,7 @@ def calculate_and_publish_predictions(application_state, application_name, maxim
 
     # Delete prediction_thread on completion
     if application_name in prediction_thread:
-        thread = self.prediction_thread[application_name]
+        thread = prediction_thread[application_name]
         thread_ident = thread.ident
         logging.info(f'Removing prediction thread for {application_name} --> ident: {thread_ident}.')
         del prediction_thread[application_name]
