@@ -41,13 +41,12 @@ class AiadPredictorState:
 
     configuration_file_location="aiad/prediction_configuration.properties"
     configuration_details = Properties()
-    prediction_processing_time_safety_margin_seconds = 30
+    prediction_processing_time_safety_margin_seconds = 60
     disconnected = True
     disconnection_handler = threading.Condition()
     testing_functionality = False
     #testing_functionality = True
     total_time_intervals_to_predict = 12
-    #total_time_intervals_to_predict = 2    # use 2 to test
 
     #Connection details
     subscribing_connector = None

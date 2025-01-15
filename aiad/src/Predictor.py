@@ -68,11 +68,14 @@ def TestingAModel(scaler, myNSA, application_state, next_prediction_time):
     return results
 
 def update_prediction_time(epoch_start, prediction_horizon, maximum_time_for_prediction):
+    print(f"epoch_start {epoch_start} prediction_horizon {prediction_horizon} maximum_time_for_prediction {maximum_time_for_prediction}")
     current_time = time.time()
     prediction_intervals_since_epoch = ((current_time - epoch_start) // prediction_horizon)
     estimated_time_after_prediction = current_time + maximum_time_for_prediction
     earliest_time_to_predict_at = epoch_start + (
             prediction_intervals_since_epoch + 1) * prediction_horizon  # these predictions will concern the next prediction interval
+
+    print(f"current_time {current_time} prediction_intervals_since_epoch {prediction_intervals_since_epoch} estimated_time_after_prediction {estimated_time_after_prediction} earliest_time_to_predict_at {earliest_time_to_predict_at}")
 
     if (estimated_time_after_prediction > earliest_time_to_predict_at):
         future_prediction_time_factor = 1 + (
@@ -105,19 +108,23 @@ def convert_to_native(obj):
         return [convert_to_native(i) for i in obj]
     return obj
 
-
-def calculate_and_publish_predictions(application_state, application_name, maximum_time_required_for_prediction):
+def calculate_and_publish_predictions(application_state, application_name, maximum_time_required_for_prediction, prediction_thread):
     start_forecasting = application_state.start_forecasting
+    
+    there_is_modeling_data = False
+    max_retries_modeling_data = 2
+    retries_modeling_data = 0
 
     while start_forecasting:
         print_with_time("Using " + AiadPredictorState.configuration_file_location + " for configuration details...")
-        application_state.next_prediction_time = update_prediction_time(application_state.epoch_start,
-                                                                        application_state.prediction_horizon,
-                                                                        maximum_time_required_for_prediction)
-                    
+
         if ((application_state.previous_prediction is not None) and (
                 application_state.previous_prediction["last_prediction_time_needed"] > maximum_time_required_for_prediction)):
             maximum_time_required_for_prediction = application_state.previous_prediction["last_prediction_time_needed"]
+
+        application_state.next_prediction_time = update_prediction_time(application_state.epoch_start,
+                                                                        application_state.prediction_horizon,
+                                                                        maximum_time_required_for_prediction)
 
         # Below we subtract one reconfiguration interval, as we cannot send a prediction for a time point later than one prediction_horizon interval
         wait_time = application_state.next_prediction_time - application_state.prediction_horizon - time.time()
@@ -127,26 +134,22 @@ def calculate_and_publish_predictions(application_state, application_name, maxim
             '%Y-%m-%d %H:%M:%S'))
         if (wait_time > 0):
             time.sleep(wait_time)
-            if (not start_forecasting):
-                break
 
         Utilities.load_configuration()
 
         if not AiadPredictorState.testing_functionality:     # in testing mode a namefile is hard code
-            there_is_data = application_state.update_model_data()       
-        if not there_is_data:
+            there_is_modeling_data = application_state.update_model_data()       
+        if there_is_modeling_data is not None and not there_is_modeling_data:
             print_with_time("IMPORTANT: There is NO data to TRAIN/CREATE the model! Application name: " + application_name)
             wait_time = AiadPredictorState.number_of_minutes_to_infer * 2 * 60
-            print_with_time("Waiting for " + str(AiadPredictorState.number_of_minutes_to_infer * 2) + " minutes before updating the model.")
+            print_with_time("Waiting for " + str(AiadPredictorState.number_of_minutes_to_infer * 2) + " minutes before creating / updating the model.")
             if (wait_time > 0):
                 time.sleep(wait_time)
             
-        else:
-        
-            first_prediction = None
+        elif there_is_modeling_data is not None and there_is_modeling_data:
 
-            prediction_time = int(application_state.next_prediction_time)       
-            scaler, myNSA = BuildingAModel(application_state, prediction_time)
+            #prediction_time = int(application_state.next_prediction_time)
+            scaler, myNSA = BuildingAModel(application_state, int(application_state.next_prediction_time))
             
             if scaler is None and myNSA is None:
                 
@@ -154,35 +157,54 @@ def calculate_and_publish_predictions(application_state, application_name, maxim
                 
             else:
                 
-                #for prediction_index in range(0, AiadPredictorState.total_time_intervals_to_predict):
                 prediction_index = 0
                 while prediction_index < AiadPredictorState.total_time_intervals_to_predict and application_state.start_forecasting:
                     logging.info(f'Beginning cycle of {application_name} (index is {prediction_index} of total_time_intervals {AiadPredictorState.total_time_intervals_to_predict} *************')
-                    prediction_time = int(
-                        application_state.next_prediction_time) + prediction_index * application_state.prediction_horizon
+                    
+                    if ((application_state.previous_prediction is not None) and (
+                            application_state.previous_prediction["last_prediction_time_needed"] > maximum_time_required_for_prediction)):
+                        maximum_time_required_for_prediction = application_state.previous_prediction["last_prediction_time_needed"]
+
+
+                    application_state.next_prediction_time = update_prediction_time(application_state.epoch_start,
+                                                                                    application_state.prediction_horizon,
+                                                                                    maximum_time_required_for_prediction)
+
+                    # Below we subtract one reconfiguration interval, as we cannot send a prediction for a time point later than one prediction_horizon interval
+                    wait_time = application_state.next_prediction_time - application_state.prediction_horizon - time.time()
+                    print_with_time("Waiting for " + str(
+                        (int(wait_time * 100)) / 100) + " seconds, until time " + datetime.datetime.fromtimestamp(
+                        application_state.next_prediction_time - application_state.prediction_horizon).strftime(
+                        '%Y-%m-%d %H:%M:%S'))
+                    if (wait_time > 0):
+                        time.sleep(wait_time)
+
+
+
+                    
                     try:
                         
                         prediction = None
+                        there_is_monitoring_data = False
                         
                         if not AiadPredictorState.testing_functionality:     # in testing mode a namefile is hard code
-                            there_is_data = application_state.update_monitoring_data()
+                            there_is_monitoring_data = application_state.update_monitoring_data()
 
-                        if not there_is_data:
-                            print_with_time("IMPORTANT: There is NO data to MONITOR!")
-                            wait_time = AiadPredictorState.number_of_minutes_to_infer * 60
-                            print_with_time("Waiting for " + str(AiadPredictorState.number_of_minutes_to_infer) + " minutes before monitoring again.")
-                            #wait_time = 60                                                                                  # ONLY FOR TESTING. PAULA
-                            #print_with_time("Waiting for 60 SEGUNDOS before monitoring again. ESTO SE DEBE CAMBIAR!!!!!")   # ONLY FOR TESTING. PAULA
-                            if (wait_time > 0):
-                                time.sleep(wait_time)
-                            break
+                        if not there_is_monitoring_data:
+                            print_with_time("IMPORTANT: There is NO data to MONITOR! Application name: " + application_name)
+                            # wait_time = AiadPredictorState.number_of_minutes_to_infer * 60
+                            # print_with_time("Waiting for " + str(AiadPredictorState.number_of_minutes_to_infer) + " minutes before monitoring again.")
+                            # #wait_time = 60                                                                                  # ONLY FOR TESTING. PAULA
+                            # #print_with_time("Waiting for 60 SEGUNDOS before monitoring again. ESTO SE DEBE CAMBIAR!!!!!")   # ONLY FOR TESTING. PAULA
+                            # if (wait_time > 0):
+                                # time.sleep(wait_time)
+                            # break
+                        else:
+                            print_with_time("Initiating predictions for all metrics for next_prediction_time, which is " + str(
+                                application_state.next_prediction_time) + " prediction_index " + str(prediction_index))
+                            
+                            prediction = TestingAModel(scaler, myNSA, application_state, int(application_state.next_prediction_time))
 
-                        print_with_time("Initiating predictions for all metrics for next_prediction_time, which is " + str(
-                            application_state.next_prediction_time) + " prediction_index " + str(prediction_index))
-                        
-                        prediction = TestingAModel(scaler, myNSA, application_state, prediction_time)
-                        if (prediction_time == int(application_state.next_prediction_time)):
-                            first_prediction = prediction
                     except Exception as e:
                         print_with_time("Could not create a prediction for the metrics for time point " + str(
                             application_state.next_prediction_time) + ", proceeding to next prediction time. Index " + str(
@@ -207,7 +229,7 @@ def calculate_and_publish_predictions(application_state, application_name, maxim
                                 "window_start": np.int64(prediction["data"].index.min()),
                                 "window_end": np.int64(prediction["data"].index.max()),
                                 "window_anomaly_rate": prediction["window_anomaly_rate"],
-                                "predictionTime": np.int64(prediction_time),
+                                "predictionTime": np.int64(application_state.next_prediction_time),
                                 "metrics": application_state.metrics_to_predict
                             }
                             # Convert message to native types
@@ -231,16 +253,33 @@ def calculate_and_publish_predictions(application_state, application_name, maxim
                         else:
                             print_with_time("NO anomaly detection message sent for application " + application_name + ". Window anomaly rate is "+str(prediction["window_anomaly_rate"])+" (Send when is >= " +str(AiadPredictorState.ai_nsa_anomaly_rate)+ ").")
                             print_with_time("******************************************************************************************\n\n")
+                            
+                        application_state.previous_prediction = prediction
                         
                     logging.info(f'Ending cycle of {application_name} (index is {prediction_index} of total_time_intervals {AiadPredictorState.total_time_intervals_to_predict} *************')
-                    prediction_index += 1
-                
-                if (first_prediction is not None):
-                    application_state.previous_prediction = first_prediction  # first_prediction is the first of the batch of the predictions which are produced. The size of this batch is set by the State.total_time_intervals_to_predict (currently set to 12)
+                    prediction_index += 1             
+        
+        if there_is_modeling_data is None or there_is_monitoring_data is None:
+            start_forecasting = False
+            logging.info(f'Ending the anomaly detection for application {application_name} due to ERROR.')         
+        else: 
+            if not there_is_modeling_data:
+                retries_modeling_data += 1
+            
+            if retries_modeling_data >= max_retries_modeling_data or not there_is_monitoring_data:
+                start_forecasting = False
+                logging.info(f'Ending the anomaly detection for application {application_name} due to NO data.')         
        
-        if not application_state.start_forecasting:
-            start_forecasting = application_state.start_forecasting
-            logging.info(f'Ending the cycle --> a new monitoring data arrived at topic metric_list.')
+            if not application_state.start_forecasting:
+                start_forecasting = application_state.start_forecasting
+                logging.info(f'Ending the cycle for application {application_name} --> a new monitoring data arrived at topic metric_list.')
+
+    # Delete prediction_thread on completion
+    if application_name in prediction_thread:
+        thread = self.prediction_thread[application_name]
+        thread_ident = thread.ident
+        logging.info(f'Removing prediction thread for {application_name} --> ident: {thread_ident}.')
+        del prediction_thread[application_name]
 
 # class Listener(messaging.listener.MorphemicListener):
 class BootStrap(ConnectorHandler):
@@ -301,8 +340,10 @@ class ConsumerHandler(Handler):
                         thread_ident = thread.ident
                         print_with_time(f'Blocking the execution of the thread for {application_name} until it has finished --> ident: {thread_ident}.')
                         thread.join()
-                        print_with_time(f'Unblocking the execution of the thread for {application_name} --> ident: {thread_ident}.')
-                        del self.prediction_thread[application_name]
+                        if application_name in self.prediction_thread:
+                            print_with_time(f'Unblocking the execution of the thread for {application_name} --> ident: {thread_ident}.')
+                            del self.prediction_thread[application_name]
+                            logging.info(f'Removed prediction thread for {application_name}')
                     
                 metric_list_object = body["metric_list"]
                 # Only take into account the list of metrics received since that moment.
@@ -327,8 +368,6 @@ class ConsumerHandler(Handler):
                 individual_application_state[application_name] = application_state
                 AiadPredictorState.individual_application_state.update(individual_application_state)
 
-                print(f'application_state.metrics_to_predict {application_state.metrics_to_predict}')
-                print(f'application_name {application_name}')
                 print_with_time("Starting the anomaly detector using the following metrics: " + ",".join(
                     application_state.metrics_to_predict) + " for application " + application_name + ", proceeding with the anomaly detector process")
 
@@ -401,7 +440,7 @@ class ConsumerHandler(Handler):
                 if application_name not in self.prediction_thread or not self.prediction_thread[application_name].is_alive():
                     print_with_time("calculate_and_publish_predictions for " + application_name)
                     thread = threading.Thread(target=calculate_and_publish_predictions,
-                                              args=[application_state, application_name, maximum_time_required_for_prediction])
+                                              args=[application_state, application_name, maximum_time_required_for_prediction, self.prediction_thread])
                     thread.start()
                     self.prediction_thread[application_name] = thread
                     print_with_time(f'Thread ident: {thread.ident} for application {application_name} AFTER the start.')
