@@ -233,24 +233,24 @@ def train_aiad(data_filename, lower_bound_value, upper_bound_value, next_predict
     logging.info(f'Data {data_filename} loaded.')
     logging.info(train_data.head())
 
-    if next_prediction_time is not None:
-        current_time = int(pd.Timestamp.now().timestamp())
-        oldest_acceptable_time_point = current_time - (
-                config.getint('DEFAULT', 'number_of_days_to_use_data_from') * 24 * 3600
-                + config.getint('DEFAULT', 'prediction_processing_time_safety_margin_seconds'))
-        # number_of_minutes_to_infer * 60 ... 60 values in 1 minute
-        newest_acceptable_time_point = current_time - (
-                config.getint('DEFAULT', 'number_of_minutes_to_infer') * 60)
+    # if next_prediction_time is not None:
+        # current_time = int(pd.Timestamp.now().timestamp())
+        # oldest_acceptable_time_point = current_time - (
+                # config.getint('DEFAULT', 'number_of_days_to_use_data_from') * 24 * 3600
+                # + config.getint('DEFAULT', 'prediction_processing_time_safety_margin_seconds'))
+        # # number_of_minutes_to_infer * 60 ... 60 values in 1 minute
+        # newest_acceptable_time_point = current_time - (
+                # config.getint('DEFAULT', 'number_of_minutes_to_infer') * 60)
 
-        logging.info(f'current_time {current_time} oldest_acceptable_time_point {oldest_acceptable_time_point} newest_acceptable_time_point {newest_acceptable_time_point}')
-        train_data = train_data[train_data['ems_time'] > oldest_acceptable_time_point]
-        train_data = train_data[train_data['ems_time'] < newest_acceptable_time_point]
-        logging.info("Data after filtering by time")
-        logging.info(train_data.head())
+        # logging.info(f'current_time {current_time} oldest_acceptable_time_point {oldest_acceptable_time_point} newest_acceptable_time_point {newest_acceptable_time_point}')
+        # train_data = train_data[train_data['ems_time'] > oldest_acceptable_time_point]
+        # train_data = train_data[train_data['ems_time'] < newest_acceptable_time_point]
+        # logging.info("Data after filtering by time")
+        # logging.info(train_data.head())
 
-        if len(train_data) == 0:
-            logging.info("NO data remained after filtering.")
-            return None
+        # if len(train_data) == 0:
+            # logging.info("NO data remained after filtering.")
+            # return None
     
 
     # Drop the Timestamp column to avoid it being used in predictions
@@ -307,21 +307,21 @@ def inference_aiad(scaler, myNSA, application_name, data_filename, next_predicti
     logging.info(f'Data {data_filename} loaded.')
     logging.info(test_data.head())    
 
-    if next_prediction_time is not None:
-        current_time = int(pd.Timestamp.now().timestamp())
-        # number_of_minutes_to_infer * 60 ... 60 values in 1 minute
-        newest_acceptable_time_point = current_time - (
-                config.getint('DEFAULT', 'number_of_minutes_to_infer') * 60)
+    # if next_prediction_time is not None:
+        # current_time = int(pd.Timestamp.now().timestamp())
+        # # number_of_minutes_to_infer * 60 ... 60 values in 1 minute
+        # newest_acceptable_time_point = current_time - (
+                # config.getint('DEFAULT', 'number_of_minutes_to_infer') * 60)
 
-        logging.info(f'current_time {current_time} newest_acceptable_time_point {newest_acceptable_time_point}')
+        # logging.info(f'current_time {current_time} newest_acceptable_time_point {newest_acceptable_time_point}')
 
-        test_data = test_data[test_data['ems_time'] >= newest_acceptable_time_point]
-        logging.info("Data after filtering by time")
-        logging.info(test_data.head())
+        # test_data = test_data[test_data['ems_time'] >= newest_acceptable_time_point]
+        # logging.info("Data after filtering by time")
+        # logging.info(test_data.head())
 
-        if len(test_data) == 0:
-            logging.info("NO data remained after filtering.")
-            return None
+        # if len(test_data) == 0:
+            # logging.info("NO data remained after filtering.")
+            # return None
 
     # Drop the Timestamp column to avoid it being used in predictions
     test_data.drop(columns=['Timestamp'], inplace=True)
