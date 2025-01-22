@@ -138,7 +138,9 @@ def calculate_and_publish_predictions(application_state, application_name, maxim
         Utilities.load_configuration()
 
         if not AiadPredictorState.testing_functionality:     # in testing mode a namefile is hard code
-            there_is_modeling_data = application_state.update_model_data()       
+            there_is_modeling_data = application_state.update_model_data()
+        else:
+            there_is_modeling_data = True
         if there_is_modeling_data is not None and not there_is_modeling_data:
             print_with_time("IMPORTANT: There is NO data to TRAIN/CREATE the model! Application name: " + application_name)
             wait_time = AiadPredictorState.number_of_minutes_to_infer * 2 * 60
@@ -147,7 +149,6 @@ def calculate_and_publish_predictions(application_state, application_name, maxim
                 time.sleep(wait_time)
             
         elif there_is_modeling_data is not None and there_is_modeling_data:
-
             #prediction_time = int(application_state.next_prediction_time)
             scaler, myNSA = BuildingAModel(application_state, int(application_state.next_prediction_time))
             
@@ -189,6 +190,8 @@ def calculate_and_publish_predictions(application_state, application_name, maxim
                         
                         if not AiadPredictorState.testing_functionality:     # in testing mode a namefile is hard code
                             there_is_monitoring_data = application_state.update_monitoring_data()
+                        else:
+                            there_is_monitoring_data = True
 
                         if not there_is_monitoring_data:
                             print_with_time("IMPORTANT: There is NO data to MONITOR! Application name: " + application_name)
@@ -257,7 +260,7 @@ def calculate_and_publish_predictions(application_state, application_name, maxim
                         application_state.previous_prediction = prediction
                         
                     logging.info(f'Ending cycle of {application_name} (index is {prediction_index} of total_time_intervals {AiadPredictorState.total_time_intervals_to_predict} *************')
-                    prediction_index += 1             
+                    prediction_index += 1
         
         if there_is_modeling_data is None or there_is_monitoring_data is None:
             start_forecasting = False
