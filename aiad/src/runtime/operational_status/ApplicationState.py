@@ -29,6 +29,7 @@ class ApplicationState:
         self.epoch_start = 0
         self.next_prediction_time = 0
         self.prediction_horizon = 300       # Time interval (in seconds) between consecutive predictions
+        #self.prediction_horizon = 120       # To testing. Time interval (in seconds) between consecutive predictions
         self.previous_prediction = None
         self.initial_metric_list_received = False
         self.lower_bound_value = {}
@@ -113,7 +114,7 @@ class ApplicationState:
                     except TimeoutError as e:
                         retry_count += 1
                         if retry_count < MAX_RETRIES:
-                            logging.error(f"Unexpected error occurred for metric {metric_name}: {str(e)}. Retrying {retry_count}/{MAX_RETRIES}...............................")
+                            logging.error(f"Module update_model_data. Unexpected error occurred for metric {metric_name}: {str(e)}. Retrying {retry_count}/{MAX_RETRIES}...............................")
                             time.sleep(RETRY_DELAY * (2 ** (retry_count - 1)))  # Retraso exponencial
                         else:
                             logging.error(f"Maximum retries reached for metric {metric_name}.")
@@ -160,7 +161,7 @@ class ApplicationState:
                             logging.error(f"Maximum retries reached for metric {metric_name}.")
                             return None
                     except Exception as e:
-                        logging.error(f"Unexpected error while querying metric {metric_name}: {str(e)}")
+                        logging.error(f"Module update_monitoring_data. Unexpected error while querying metric {metric_name}: {str(e)}")
                         return None
                 if not success:
                     # Si no se tuvo éxito después de los reintentos, retornar error
@@ -171,22 +172,6 @@ class ApplicationState:
             Utilities.print_with_time("Error in update_monitoring_data")
             logging.error(traceback.format_exc())
             return None
-
-    def _query_influxdbBack(self, metric_name, past_days=0, past_minutes=0):
-        current_time = time.time()
-        start_time = current_time - (past_days * 24 * 60 * 60) - (past_minutes * 60)
-        end_time = current_time
-        start_time_iso = datetime.utcfromtimestamp(start_time).isoformat() + "Z"
-        end_time_iso = datetime.utcfromtimestamp(end_time).isoformat() + "Z"
-
-        query_string = (
-            f'from(bucket: "{self.influxdb_bucket}") '
-            f'|> range(start: {start_time_iso}, stop: {end_time_iso}) '
-            f'|> filter(fn: (r) => r["_measurement"] == "{metric_name}")'
-        )
-        influx_connector = InfluxDBConnector()
-        logging.info(f"Performing query: {query_string}")
-        return influx_connector.client.query_api().query(query_string, AiadPredictorState.influxdb_organization)
 
     def _query_influxdb(self, metric_name, past_days=0, past_minutes=0):
         current_time = time.time()

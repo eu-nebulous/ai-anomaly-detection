@@ -27,13 +27,17 @@ class Utilities:
             AiadPredictorState.number_of_days_to_use_data_from = int(AiadPredictorState.configuration_details.get("number_of_days_to_use_data_from").data)
             AiadPredictorState.number_of_minutes_to_infer = int(AiadPredictorState.configuration_details.get("number_of_minutes_to_infer").data)
             AiadPredictorState.prediction_processing_time_safety_margin_seconds = int(AiadPredictorState.configuration_details.get("prediction_processing_time_safety_margin_seconds").data)
-            AiadPredictorState.ai_nsa_anomaly_rate = float(AiadPredictorState.configuration_details.get("ai_nsa_anomaly_rate").data)
             AiadPredictorState.testing_functionality = AiadPredictorState.configuration_details.get("testing_functionality").data.lower() == "true"
             AiadPredictorState.path_to_datasets = AiadPredictorState.configuration_details.get("path_to_datasets").data
             AiadPredictorState.broker_address = AiadPredictorState.configuration_details.get("broker_address").data
             AiadPredictorState.broker_port = int(AiadPredictorState.configuration_details.get("broker_port").data)
             AiadPredictorState.broker_username = AiadPredictorState.configuration_details.get("broker_username").data
             AiadPredictorState.broker_password = AiadPredictorState.configuration_details.get("broker_password").data
+
+            AiadPredictorState.ai_nsa = AiadPredictorState.configuration_details.get("ai_nsa").data.lower() == "true"
+            AiadPredictorState.ai_nsa_anomaly_rate = float(AiadPredictorState.configuration_details.get("ai_nsa_anomaly_rate").data)
+            AiadPredictorState.ai_kmeans = AiadPredictorState.configuration_details.get("ai_kmeans").data.lower() == "true"
+            AiadPredictorState.ai_kmeans_anomaly_rate = float(AiadPredictorState.configuration_details.get("ai_kmeans_anomaly_rate").data)
 
             AiadPredictorState.influxdb_hostname = AiadPredictorState.configuration_details.get("INFLUXDB_HOSTNAME").data
             AiadPredictorState.influxdb_port = int(AiadPredictorState.configuration_details.get("INFLUXDB_PORT").data)

@@ -37,11 +37,15 @@ class AiadPredictorState:
     path_to_datasets = "./datasets/"
     number_of_days_to_use_data_from = 2
     number_of_minutes_to_infer = 180
+
+    ai_nsa = True
     ai_nsa_anomaly_rate = 10            # Means percentage (10%)
+    ai_kmeans = True
+    ai_kmeans_anomaly_rate = 10         # Means percentage (10%)
 
     configuration_file_location="aiad/prediction_configuration.properties"
     configuration_details = Properties()
-    prediction_processing_time_safety_margin_seconds = 60
+    prediction_processing_time_safety_margin_seconds = 100
     disconnected = True
     disconnection_handler = threading.Condition()
     testing_functionality = False
