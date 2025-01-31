@@ -111,6 +111,8 @@ def nsa_train(df, num_samples_to_lag, num_samples_to_diff, num_samples_to_smooth
     # max_t_cells are the max number of detectors
     myNSA = NSA(max_t_cells, max_attempts, dimension, percentage, algorithm, n_neighbors, num_samples_to_lag, num_samples_to_diff, num_samples_to_smooth)
     myNSA.fit(df_preprocessed.values, y_train)
+    
+    logging.info(f'NSA model was created!!!')
             
     return myNSA
 
@@ -240,6 +242,8 @@ def kmeans_train(df, num_samples_to_lag, num_samples_to_diff, num_samples_to_smo
         # save min and max anomaly score during training, used to normalize all scores to be 0,1 scale
         models[dim]['train_raw_anomaly_score_min'] = min(train_raw_anomaly_scores)
         models[dim]['train_raw_anomaly_score_max'] = max(train_raw_anomaly_scores)
+
+    logging.info(f'kmeans models were created!!!')
     
     return models
 
@@ -363,7 +367,7 @@ def kmeans_inference(application_name, models, df, anomaly_bit_max, ai_kmeans_di
 
     return df_anomaly_scores, df_anomaly_bits
 
-def train_aiad(data_filename, lower_bound_value, upper_bound_value):
+def train_aiad(ai_nsa, ai_kmeans, data_filename, lower_bound_value, upper_bound_value):
     # Load configuration properties
     # Determine the directory of the current script
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -373,7 +377,6 @@ def train_aiad(data_filename, lower_bound_value, upper_bound_value):
     config = configparser.ConfigParser()
     config.read(config_path)
 
-    ai_nsa = config.getboolean('DEFAULT', 'ai_nsa')
     ai_nsa_num_samples_to_lag = config.getint('DEFAULT', 'ai_nsa_num_samples_to_lag')
     ai_nsa_num_samples_to_diff = config.getint('DEFAULT', 'ai_nsa_num_samples_to_diff')
     ai_nsa_num_samples_to_smooth = config.getint('DEFAULT', 'ai_nsa_num_samples_to_smooth')
@@ -382,8 +385,6 @@ def train_aiad(data_filename, lower_bound_value, upper_bound_value):
     ai_nsa_percentage = config.getfloat('DEFAULT', 'ai_nsa_percentage')                         # radio = sqrt(#metrics) * nsa_percentage = sqrt(#metrics) * 0.05
     ai_nsa_algorithm = config.getint('DEFAULT', 'ai_nsa_algorithm')                             # KNeighborsClassifier:1, KDTree: 2, BallTree: 3
     ai_nsa_n_neighbors = config.getint('DEFAULT', 'ai_nsa_n_neighbors')                         # neighbors: 5
-    ai_nsa_anomaly_rate = config.getfloat('DEFAULT', 'ai_nsa_anomaly_rate')                     # 10% (10 percentage)
-    ai_kmeans = config.getboolean('DEFAULT', 'ai_kmeans')
     ai_kmeans_num_samples_to_lag = config.getint('DEFAULT', 'ai_kmeans_num_samples_to_lag')
     ai_kmeans_num_samples_to_diff = config.getint('DEFAULT', 'ai_kmeans_num_samples_to_diff')
     ai_kmeans_num_samples_to_smooth = config.getint('DEFAULT', 'ai_kmeans_num_samples_to_smooth')
@@ -424,16 +425,20 @@ def train_aiad(data_filename, lower_bound_value, upper_bound_value):
     
     logging.info("Scaled training data sample.")
     logging.info(train_data_scaled.head())
-   
-    myNSA = nsa_train(train_data_scaled, ai_nsa_num_samples_to_lag, ai_nsa_num_samples_to_diff, ai_nsa_num_samples_to_smooth, 
+
+    myNSA = None
+    if ai_nsa:
+        myNSA = nsa_train(train_data_scaled, ai_nsa_num_samples_to_lag, ai_nsa_num_samples_to_diff, ai_nsa_num_samples_to_smooth, 
                         ai_nsa_max_t_cells, ai_nsa_max_attempts, ai_nsa_percentage, ai_nsa_algorithm, ai_nsa_n_neighbors)   
     
-    myKmeans = kmeans_train(train_data_scaled, ai_kmeans_num_samples_to_lag, ai_kmeans_num_samples_to_diff, ai_kmeans_num_samples_to_smooth,
+    myKmeans = None
+    if ai_kmeans:
+        myKmeans = kmeans_train(train_data_scaled, ai_kmeans_num_samples_to_lag, ai_kmeans_num_samples_to_diff, ai_kmeans_num_samples_to_smooth,
                         ai_kmeans_max_iterations)
     
     return scaler, myNSA, myKmeans
 
-def inference_aiad(scaler, myNSA, myKmeans, application_name, data_filename):
+def inference_aiad(ai_nsa, ai_kmeans, scaler, myNSA, myKmeans, data_filename, application_name):
     # Load configuration properties
     # Determine the directory of the current script
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -472,155 +477,157 @@ def inference_aiad(scaler, myNSA, myKmeans, application_name, data_filename):
 
     logging.info("Scaled testing data sample.")
     logging.info(test_data_scaled.head())
+
+    results = {}
     
     # NSA
-    df_distance_scores, df_anomaly_bits  = nsa_inference(application_name, myNSA, test_data_scaled, anomaly_bit_max)
-    
-    # join distance scores to test_data
-    df_final = test_data.join(df_distance_scores, how='outer')
-
-    #join anomaly bits to raw test_data
-    df_final = df_final.join(df_anomaly_bits, how='outer')
-    
-    df_final = df_final.dropna()
-
-    logging.info(f'NSA df_final')
-    logging.info(df_final)
-
-    if ai_graph:        
-        figsize = (16,6)
+    if ai_nsa:
+        df_distance_scores, df_anomaly_bits  = nsa_inference(application_name, myNSA, test_data_scaled, anomaly_bit_max)
         
-        df_final_aux = test_data_scaled.join(df_distance_scores, how='outer')
+        # join distance scores to test_data
+        df_final = test_data.join(df_distance_scores, how='outer')
 
-        #join anomaly bits to raw df
-        df_final_aux = df_final_aux.join(df_anomaly_bits, how='outer')
+        #join anomaly bits to raw test_data
+        df_final = df_final.join(df_anomaly_bits, how='outer')
         
-        df_final_aux = df_final_aux.dropna()
-      
+        df_final = df_final.dropna()
 
-        # PCF el eje y escala mal
-        title = f'03.{application_name} NSA Normalized Raw Data to Predict'
-        ax = plt.gca()
-        dims = test_data.columns
-        data = df_final_aux[dims].set_index(pd.to_datetime(df_final_aux.index, unit='s'))
-        data.plot(title=title, figsize=figsize)
-        plt.savefig('images/' + title.replace('|', '.') + '.png', dpi=1200)
-        plt.close()
+        logging.info(f'NSA df_final')
+        logging.info(df_final)
+
+        if ai_graph:        
+            figsize = (16,6)
             
-        title = f'03.{application_name} NSA Distance Score'
-        ax = plt.gca()
-        data = df_final_aux[['distance_score']].set_index(pd.to_datetime(df_final_aux.index, unit='s'))
-        data.plot(title=title, figsize=figsize)
-        plt.savefig('images/' + title.replace('|', '.') + '.png', dpi=1200)
-        plt.close()
+            df_final_aux = test_data_scaled.join(df_distance_scores, how='outer')
+
+            #join anomaly bits to raw df
+            df_final_aux = df_final_aux.join(df_anomaly_bits, how='outer')
             
-        title = f'03.{application_name} NSA Anomaly Bit'
-        ax = plt.gca()
-        data = df_final_aux[['anomaly_bit']].set_index(pd.to_datetime(df_final_aux.index, unit='s'))
-        data.plot(title=title, figsize=figsize)
-        plt.savefig('images/' + title.replace('|', '.') + '.png', dpi=1200)
-        plt.close()
+            df_final_aux = df_final_aux.dropna()
+          
 
-        title = f'03.{application_name} NSA (Distance Score, Anomaly Bit)'
-        ax = plt.gca()
-        data = df_final_aux[['distance_score', 'anomaly_bit']].set_index(pd.to_datetime(df_final_aux.index, unit='s'))
-        data.plot(title=title, figsize=figsize)
-        plt.savefig('images/' + title.replace('|', '.') + '.png', dpi=1200)
-        plt.close()
+            # PCF el eje y escala mal
+            title = f'03.{application_name} NSA Normalized Raw Data to Predict'
+            ax = plt.gca()
+            dims = test_data.columns
+            data = df_final_aux[dims].set_index(pd.to_datetime(df_final_aux.index, unit='s'))
+            data.plot(title=title, figsize=figsize)
+            plt.savefig('images/' + title.replace('|', '.') + '.png', dpi=1200)
+            plt.close()
+                
+            title = f'03.{application_name} NSA Distance Score'
+            ax = plt.gca()
+            data = df_final_aux[['distance_score']].set_index(pd.to_datetime(df_final_aux.index, unit='s'))
+            data.plot(title=title, figsize=figsize)
+            plt.savefig('images/' + title.replace('|', '.') + '.png', dpi=1200)
+            plt.close()
+                
+            title = f'03.{application_name} NSA Anomaly Bit'
+            ax = plt.gca()
+            data = df_final_aux[['anomaly_bit']].set_index(pd.to_datetime(df_final_aux.index, unit='s'))
+            data.plot(title=title, figsize=figsize)
+            plt.savefig('images/' + title.replace('|', '.') + '.png', dpi=1200)
+            plt.close()
 
-        title = f'03.{application_name} NSA Combined (Normalized Raw, Score, Bit)'
-        ax = plt.gca()
-        data = df_final_aux.set_index(pd.to_datetime(df_final_aux.index, unit='s'))
-        data.plot(title=title, figsize=figsize)
-        plt.savefig('images/' + title.replace('|', '.') + '.png', dpi=1200)
-        plt.close()
-    
-    # Window_anomaly_rate to give an alarm
-    window_anomaly_rate = df_final['anomaly_bit'].sum() * 100 / (df_final.shape[0] * anomaly_bit_max)
+            title = f'03.{application_name} NSA (Distance Score, Anomaly Bit)'
+            ax = plt.gca()
+            data = df_final_aux[['distance_score', 'anomaly_bit']].set_index(pd.to_datetime(df_final_aux.index, unit='s'))
+            data.plot(title=title, figsize=figsize)
+            plt.savefig('images/' + title.replace('|', '.') + '.png', dpi=1200)
+            plt.close()
 
-    logging.info(f'nsa. The "window anomaly rate" within the last period ({df_final.index.min()}, {df_final.index.max()}) was {window_anomaly_rate}%')
-    logging.info(f'nsa. Another way to think of this is that {window_anomaly_rate}% of the observations during the last window were considered anomalous based on the latest trained model.')
-    
-    logging.info('myNSA has finished.\n')
+            title = f'03.{application_name} NSA Combined (Normalized Raw, Score, Bit)'
+            ax = plt.gca()
+            data = df_final_aux.set_index(pd.to_datetime(df_final_aux.index, unit='s'))
+            data.plot(title=title, figsize=figsize)
+            plt.savefig('images/' + title.replace('|', '.') + '.png', dpi=1200)
+            plt.close()
+        
+        # Window_anomaly_rate to give an alarm
+        window_anomaly_rate = df_final['anomaly_bit'].sum() * 100 / (df_final.shape[0] * anomaly_bit_max)
+
+        logging.info(f'nsa. The "window anomaly rate" within the last period ({df_final.index.min()}, {df_final.index.max()}) was {window_anomaly_rate}%')
+        logging.info(f'nsa. Another way to think of this is that {window_anomaly_rate}% of the observations during the last window were considered anomalous based on the latest trained model.')
+        
+        logging.info('myNSA has finished.\n')
+
+        results["nsa_data"] = df_final
+        results["nsa_window_anomaly_rate"] = window_anomaly_rate
     # end NSA
     
     # kmeans   
-    df_anomaly_scores, df_anomaly_bits = kmeans_inference(application_name, myKmeans, test_data_scaled, anomaly_bit_max, ai_kmeans_dim_anomaly_score)
-    
-    # join anomaly scores to raw test_data
-    df_final2 = test_data.join(df_anomaly_scores, how='outer')
-
-    # join anomaly bits to raw test_data
-    df_final2 = df_final2.join(df_anomaly_bits, how='outer')
-
-    df_final2 = df_final2.dropna()
-
-    logging.info(f'k-means df_final = {df_final2}')
-
-    if ai_graph:
-        figsize = (16,6)
+    if ai_kmeans:
+        df_anomaly_scores, df_anomaly_bits = kmeans_inference(application_name, myKmeans, test_data_scaled, anomaly_bit_max, ai_kmeans_dim_anomaly_score)
         
-        df_final_aux = test_data_scaled.join(df_anomaly_scores, how='outer')
+        # join anomaly scores to raw test_data
+        df_final2 = test_data.join(df_anomaly_scores, how='outer')
 
-        df_final_aux = df_final_aux.join(df_anomaly_bits, how='outer')
+        # join anomaly bits to raw test_data
+        df_final2 = df_final2.join(df_anomaly_bits, how='outer')
 
-        df_final_aux = df_final_aux.dropna()   
+        df_final2 = df_final2.dropna()
 
+        logging.info(f'k-means df_final2 = {df_final2}')
+
+        if ai_graph:
+            figsize = (16,6)
+            
+            df_final_aux = test_data_scaled.join(df_anomaly_scores, how='outer')
+
+            df_final_aux = df_final_aux.join(df_anomaly_bits, how='outer')
+
+            df_final_aux = df_final_aux.dropna()   
+
+            for dim in myKmeans:
+
+                # create a dim with the raw data, anomaly score and anomaly bit for the dim
+                df_final_dim = df_final_aux[[dim,f'{dim}_anomaly_score',f'{dim}_anomaly_bit']]
+                
+                title = f'04.{application_name} k-means Normalized Raw Data to Predict - {dim}'
+                ax = plt.gca()
+                data = df_final_dim[[dim]].set_index(pd.to_datetime(df_final_dim.index, unit='s'))
+                data.plot(title=title, figsize=figsize)
+                plt.savefig('images/' + title.replace('|', '.') + '.png', dpi=1200)
+                plt.close()
+                
+                title = f'04.{application_name} k-means Anomaly Score - {dim}'
+                ax = plt.gca()
+                data = df_final_dim[[f'{dim}_anomaly_score']].set_index(pd.to_datetime(df_final_dim.index, unit='s'))
+                data.plot(title=title, figsize=figsize)
+                plt.savefig('images/' + title.replace('|', '.') + '.png', dpi=1200)
+                plt.close()
+
+                title = f'04.{application_name} k-means Anomaly Bit - {dim}'
+                ax = plt.gca()
+                data = df_final_dim[[f'{dim}_anomaly_bit']].set_index(pd.to_datetime(df_final_dim.index, unit='s'))
+                data.plot(title=title, figsize=figsize)
+                plt.savefig('images/' + title.replace('|', '.') + '.png', dpi=1200)
+                plt.close()
+
+                title = f'04.{application_name} k-means Combined (Normalized Raw, Score, Bit) - {dim}'
+                ax = plt.gca()
+                #df_final_dim_normalized = (df_final_dim-df_final_dim.min())/(df_final_dim.max()-df_final_dim.min())
+                #data = df_final_dim_normalized.set_index(pd.to_datetime(df_final_dim_normalized.index, unit='s'))
+                data = df_final_dim.set_index(pd.to_datetime(df_final_dim.index, unit='s'))
+                data.plot(title=title, figsize=figsize)
+                plt.savefig('images/' + title.replace('|', '.') + '.png', dpi=1200)
+                plt.close()
+
+        window_anomaly_rate2 = {}
         for dim in myKmeans:
-
+            
             # create a dim with the raw data, anomaly score and anomaly bit for the dim
-            df_final_dim = df_final_aux[[dim,f'{dim}_anomaly_score',f'{dim}_anomaly_bit']]
-            
-            title = f'04.{application_name} k-means Normalized Raw Data to Predict - {dim}'
-            ax = plt.gca()
-            data = df_final_dim[[dim]].set_index(pd.to_datetime(df_final_dim.index, unit='s'))
-            data.plot(title=title, figsize=figsize)
-            plt.savefig('images/' + title.replace('|', '.') + '.png', dpi=1200)
-            plt.close()
-            
-            title = f'04.{application_name} k-means Anomaly Score - {dim}'
-            ax = plt.gca()
-            data = df_final_dim[[f'{dim}_anomaly_score']].set_index(pd.to_datetime(df_final_dim.index, unit='s'))
-            data.plot(title=title, figsize=figsize)
-            plt.savefig('images/' + title.replace('|', '.') + '.png', dpi=1200)
-            plt.close()
+            df_final_dim = df_final2[[dim,f'{dim}_anomaly_score',f'{dim}_anomaly_bit']]
 
-            title = f'04.{application_name} k-means Anomaly Bit - {dim}'
-            ax = plt.gca()
-            data = df_final_dim[[f'{dim}_anomaly_bit']].set_index(pd.to_datetime(df_final_dim.index, unit='s'))
-            data.plot(title=title, figsize=figsize)
-            plt.savefig('images/' + title.replace('|', '.') + '.png', dpi=1200)
-            plt.close()
+            window_anomaly_rate2[dim] = df_final_dim[f'{dim}_anomaly_bit'].sum() * 100 / (df_final_dim.shape[0] * anomaly_bit_max)
 
-            title = f'04.{application_name} k-means Combined (Normalized Raw, Score, Bit) - {dim}'
-            ax = plt.gca()
-            #df_final_dim_normalized = (df_final_dim-df_final_dim.min())/(df_final_dim.max()-df_final_dim.min())
-            #data = df_final_dim_normalized.set_index(pd.to_datetime(df_final_dim_normalized.index, unit='s'))
-            data = df_final_dim.set_index(pd.to_datetime(df_final_dim.index, unit='s'))
-            data.plot(title=title, figsize=figsize)
-            plt.savefig('images/' + title.replace('|', '.') + '.png', dpi=1200)
-            plt.close()
+            logging.info(f'\n\nkmeans - Dimension {dim}. The "window anomaly rate" within the last period ({df_final_dim.index.min()}, {df_final_dim.index.max()}) was {window_anomaly_rate2}%')
+            logging.info(f'kmeans - Dimension {dim}. Another way to think of this is that {window_anomaly_rate2}% of the observations during the last window were considered anomalous based on the latest trained model.')
 
-    window_anomaly_rate2 = {}
-    for dim in myKmeans:
+        logging.info('myKmeans has finished.\n')
         
-        # create a dim with the raw data, anomaly score and anomaly bit for the dim
-        df_final_dim = df_final2[[dim,f'{dim}_anomaly_score',f'{dim}_anomaly_bit']]
-
-        window_anomaly_rate2[dim] = df_final_dim[f'{dim}_anomaly_bit'].sum() * 100 / (df_final_dim.shape[0] * anomaly_bit_max)
-
-        logging.info(f'\n\nkmeans - Dimension {dim}. The "window anomaly rate" within the last period ({df_final_dim.index.min()}, {df_final_dim.index.max()}) was {window_anomaly_rate2}%')
-        logging.info(f'kmeans - Dimension {dim}. Another way to think of this is that {window_anomaly_rate2}% of the observations during the last window were considered anomalous based on the latest trained model.')
-
-    logging.info('myKmeans has finished.\n')
-
-    # end kmeans   
-
-    results = {
-        "nsa_data": df_final,
-        "nsa_window_anomaly_rate": window_anomaly_rate,
-        "kmeans_data": df_final2,
-        "kmeans_window_anomaly_rate": window_anomaly_rate2,
-    }
+        results["kmeans_data"] = df_final2
+        results["kmeans_window_anomaly_rate"] = window_anomaly_rate2
+    # end kmeans
 
     return results

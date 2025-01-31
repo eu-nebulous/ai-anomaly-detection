@@ -34,13 +34,13 @@ def BuildingAModel(application_state, next_prediction_time):
 
     if AiadPredictorState.testing_functionality:
         print_with_time("Testing mode. Building the model for the Anomaly Detector with the ./datasets/_ApplicationPaula-model2.csv file.")
-        model_data_filename = './datasets/_ApplicationPaula-model2.csv'
-        scaler, myNSA, myKmeans = train_aiad(model_data_filename, application_state.lower_bound_value, application_state.upper_bound_value)
+        application_state.model_data_filename = './datasets/_ApplicationPaula-model2.csv'
     else:
         print_with_time("Building the model for the Anomaly Detector with real data.")
         # Get the filename with the all metrics to obatin the model
         application_state.model_data_filename = application_state.get_model_allmetrics_filename(AiadPredictorState.configuration_file_location)
-        scaler, myNSA, myKmeans = train_aiad(application_state.model_data_filename, application_state.lower_bound_value, application_state.upper_bound_value)
+        
+    scaler, myNSA, myKmeans = train_aiad(AiadPredictorState.ai_nsa, AiadPredictorState.ai_kmeans, application_state.model_data_filename, application_state.lower_bound_value, application_state.upper_bound_value)
 
     return scaler, myNSA, myKmeans
 
@@ -50,13 +50,13 @@ def TestingAModel(scaler, myNSA, myKmeans, application_state, next_prediction_ti
 
     if AiadPredictorState.testing_functionality:
         print_with_time("Testing mode. Inferring anomaly data with the ./datasets/_ApplicationPaula-test2.csv file.")
-        prediction_data_filename = './datasets/_ApplicationPaula-test2.csv'
-        results = inference_aiad(scaler, myNSA, myKmeans, application_state.application_name, prediction_data_filename)
+        application_state.prediction_data_filename = './datasets/_ApplicationPaula-test2.csv'
     else:
         print_with_time("Inferring anomaly data with with real data.")
         # Get the filename with the all metrics to infer
         application_state.prediction_data_filename = application_state.get_prediction_allmetrics_filename(AiadPredictorState.configuration_file_location)
-        results = inference_aiad(scaler, myNSA, myKmeans, application_state.application_name, application_state.prediction_data_filename)
+        
+    results = inference_aiad(AiadPredictorState.ai_nsa, AiadPredictorState.ai_kmeans, scaler, myNSA, myKmeans, application_state.prediction_data_filename, application_state.application_name)
 
     if results is not None:
         results["last_prediction_time_needed"] = int(time.time() - start_time)
@@ -110,8 +110,8 @@ def calculate_and_publish_predictions(application_state, application_name, maxim
     there_is_modeling_data = False
     max_retries_modeling_data = 2
     retries_modeling_data = 0
-
-    while start_forecasting:
+    
+    while start_forecasting and (AiadPredictorState.ai_nsa or AiadPredictorState.ai_kmeans):
         print_with_time("Using " + AiadPredictorState.configuration_file_location + " for configuration details...")
 
         if ((application_state.previous_prediction is not None) and (
@@ -175,9 +175,6 @@ def calculate_and_publish_predictions(application_state, application_name, maxim
                         '%Y-%m-%d %H:%M:%S'))
                     if (wait_time > 0):
                         time.sleep(wait_time)
-
-
-
                     
                     try:
                         
@@ -218,7 +215,7 @@ def calculate_and_publish_predictions(application_state, application_name, maxim
                     
                     no_publisher_something = True
                     if prediction is not None:
-                        if "nsa_window_anomaly_rate" in prediction and prediction["nsa_window_anomaly_rate"] >= AiadPredictorState.ai_nsa_anomaly_rate:
+                        if AiadPredictorState.ai_nsa and "nsa_window_anomaly_rate" in prediction and prediction["nsa_window_anomaly_rate"] >= AiadPredictorState.ai_nsa_anomaly_rate:
                             message_not_sent = True
                             current_time = int(time.time())
                             prediction_message_body = {
@@ -252,7 +249,7 @@ def calculate_and_publish_predictions(application_state, application_name, maxim
                                     logging.error("Error sending an nsa anomaly detection" + str(exception))
                                     AiadPredictorState.disconnected = False
 
-                        if "kmeans_window_anomaly_rate" in prediction:
+                        if AiadPredictorState.ai_kmeans and "kmeans_window_anomaly_rate" in prediction:
                             for metric, value in prediction["kmeans_window_anomaly_rate"].items():
                                 if value > AiadPredictorState.ai_kmeans_anomaly_rate:
                                     message_not_sent2 = True
@@ -315,6 +312,9 @@ def calculate_and_publish_predictions(application_state, application_name, maxim
                 start_forecasting = application_state.start_forecasting
                 logging.info(f'Ending the cycle for application {application_name} --> a new monitoring data arrived at topic metric_list.')
 
+    if not AiadPredictorState.ai_nsa and not AiadPredictorState.ai_kmeans:
+        logging.info("Please, one of the variables 'ai_nsa' or 'ai_kmeans' must be set to True.")
+    
     # Delete prediction_thread on completion
     if application_name in prediction_thread:
         thread = prediction_thread[application_name]
