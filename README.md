@@ -2,10 +2,6 @@
 
 The **Anomaly Detection** component identifies scenarios where resource utilization in Kubernetes-based applications deviates from expected behavior. It achieves this by analyzing metrics stored in **InfluxDB**.
 
-editar En
-
-https://readme.so/es/editor
-
 ## How does the Anomaly Detection component work?
 
 **1** - Subscribes to monitoring.metric_list.
