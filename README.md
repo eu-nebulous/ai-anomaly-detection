@@ -76,7 +76,7 @@ When the rate of deviations exceeds a threshold (anomaly_rate), an incident is p
 
 For the NSA:
 
-```json
+```
 message_body = {
 	"method": "aiad nsa",
 	"level": 3,
@@ -92,7 +92,7 @@ message_body = {
 
 For the k-means:
 
-```json
+```
 message_body = {
 	"method": "aiad kmeans",
 	"level": 3,
