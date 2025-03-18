@@ -14,5 +14,5 @@ jobs:
     uses: eu-nebulous/github-actions/.github/workflows/build-and-push-container-image.yml@main
     with:
       context: ai-anomaly-detection
-      image-name: ai-anomaly-detection-predictor
+      image-name: ai-anomaly-detection
     secrets: inherit
