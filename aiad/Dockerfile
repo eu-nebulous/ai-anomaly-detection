@@ -30,10 +30,10 @@ ENV PYTHONPATH="/app"
 ENV PYTHONUNBUFFERED=1
 
 # Ensure the directory exists where the script expects to operate
-#RUN mkdir -p /app/aiad
+RUN mkdir -p /app/aiad
 
 # Set the entry point to run the script
-CMD ["python", "Predictor.py", "aiad/prediction_configuration.properties"]
+CMD ["python", "Predictor.py", "/app/aiad/prediction_configuration.properties"]
 
 # Expose necessary ports if the application communicates over a network
 EXPOSE 80 8086 5672 32754
