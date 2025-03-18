@@ -13,6 +13,6 @@ jobs:
     name: Build and push ai-anomaly-detection
     uses: eu-nebulous/github-actions/.github/workflows/build-and-push-container-image.yml@main
     with:
-      context: ai-anomaly-detection
+      context: aiad
       image-name: ai-anomaly-detection
     secrets: inherit
