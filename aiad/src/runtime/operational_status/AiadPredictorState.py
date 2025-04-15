@@ -33,7 +33,8 @@ class AiadPredictorState:
     influxdb_password = "my-password"
     influxdb_username = "my-user"
     influxdb_port = 8086
-    influxdb_hostname = "localhost"
+    #influxdb_hostname = "localhost"            PCF-LOCAL
+    influxdb_hostname = "nebulous-influxdb"
     path_to_datasets = "./datasets/"
     number_of_days_to_use_data_from = 2
     number_of_minutes_to_infer = 180
