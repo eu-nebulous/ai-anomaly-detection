@@ -5,6 +5,7 @@ from proton import Link as pLink
 class Link:
 
     fqdn=False
+    context=None
 
     def __init__(self, key, address, topic=False, fqdn=False):
         super().__init__()

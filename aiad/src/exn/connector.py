@@ -1,7 +1,9 @@
 import logging
 import os
 
-from .core import state_publisher, schedule_publisher
+from proton.reactor import Container
+
+from exn.core import state_publisher, schedule_publisher
 from exn.core.context import Context
 from .core.manager import Manager
 from .settings import base
@@ -17,10 +19,10 @@ class EXN:
     container = None
 
     def __init__(self, component=None,
-                 handler: connector_handler.ConnectorHandler = None,
+                 handler:connector_handler.ConnectorHandler = None,
                  publishers=None,
                  consumers=None,
-                 **kwargs):
+                **kwargs):
 
         # Load .env file
         # Validate and set connector
@@ -75,7 +77,7 @@ class EXN:
             self.context.register_publisher(p)
 
     def start(self):
-        self.context.start(Manager(f"{self.url}:{self.port}"),self.handler)
+        self.context.start(Manager(f"{self.url}:{self.port}", self.username,self.password),self.handler)
 
 
     def stop(self):

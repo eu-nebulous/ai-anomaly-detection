@@ -1,4 +1,5 @@
 import logging
+import threading
 
 from proton import Event
 from .handler import Handler
@@ -26,7 +27,8 @@ class Consumer(link.Link, MessagingHandler):
             (self.application is None or event.message.subject == self.application)
 
         _logger.debug(f"[{self.key}] checking if link is the same {event.link.name}={self._link.name}  "
-                      f" and application {self.application}={event.message.subject}  == {should}")
+                      f" and application {self.application}={event.message.subject}  == {should} "
+                      f" and correlation_id={event.message.correlation_id}")
 
         return should
 
@@ -37,7 +39,11 @@ class Consumer(link.Link, MessagingHandler):
         _logger.debug(f"[{self.key}]  handling event with  address => {event.message.address}")
         try:
             if self.should_handle(event):
-                self.handler.on_message(self.key, event.message.address, event.message.body, event.message)
+                event.delivery.settle()
+                t = threading.Thread(target=self.handler.on_message, args=[self.key, event.message.address, event.message.body, event.message, self.context])
+                t.start()
+            else:
+                event.delivery.abort()
 
         except Exception as e:
             _logger.error(f"Received message: {e}")
