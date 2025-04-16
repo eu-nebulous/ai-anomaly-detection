@@ -60,7 +60,8 @@ class AiadPredictorState:
     broker_consumers = []
     connector = None
     # PCF USO OTRA ADDRESS broker_address = "localhost"
-    broker_address = "158.37.63.86"
+    # broker_address = "158.37.63.86"
+    broker_address = "nebulous-activemq"
     # PCF USO OTRO PUERTO PARA PROBAR broker_port = 5672
     #broker_port = 32754                    PCF-LOCAL
     broker_port = 5672
