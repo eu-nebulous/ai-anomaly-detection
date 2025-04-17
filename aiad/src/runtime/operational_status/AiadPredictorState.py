@@ -66,8 +66,8 @@ class AiadPredictorState:
     #broker_port = 32754                    PCF-LOCAL
     broker_port = 5672
     broker_username = "admin"
-    broker_password = "admin"
-
+    #broker_password = "admin"
+    broker_password = "nebulous"
 
     @staticmethod
     #TODO inspect State.connection
