@@ -1,10 +1,3 @@
-# Copyright (c) 2023 Institute of Communication and Computer Systems
-#
-# This Source Code Form is subject to the terms of the Mozilla Public
-# License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at https://mozilla.org/MPL/2.0/.        
-
-#from morphemic.dataset import DatasetMaker
 import datetime
 import logging,os
 import json
@@ -18,35 +11,102 @@ class Utilities:
     @staticmethod
     def print_with_time(x):
         now = datetime.datetime.now()
-        print("["+now.strftime('%Y-%m-%d %H:%M:%S')+"] "+str(x))
+        print("[" + now.strftime('%Y-%m-%d %H:%M:%S') + "] " + str(x))
+
+    @staticmethod
+    def get_config_value(env_var, config_key):
+        """
+        Returns the value of an environment variable if it is set;
+        otherwise returns the value from the configuration file.
+        """
+        env_val = os.getenv(env_var)
+        if env_val is not None:
+            logging.info(f"Overriding {config_key} with environment variable {env_var}: {env_val}")
+            return env_val
+        else:
+            return AiadPredictorState.configuration_details.get(config_key).data
 
     @staticmethod
     def load_configuration():
+        # First load configuration details from the properties file.
         with open(AiadPredictorState.configuration_file_location, 'rb') as config_file:
             AiadPredictorState.configuration_details.load(config_file)
-            AiadPredictorState.number_of_days_to_use_data_from = int(AiadPredictorState.configuration_details.get("number_of_days_to_use_data_from").data)
-            AiadPredictorState.number_of_minutes_to_infer = int(AiadPredictorState.configuration_details.get("number_of_minutes_to_infer").data)
-            AiadPredictorState.prediction_processing_time_safety_margin_seconds = int(AiadPredictorState.configuration_details.get("prediction_processing_time_safety_margin_seconds").data)
-            AiadPredictorState.testing_functionality = AiadPredictorState.configuration_details.get("testing_functionality").data.lower() == "true"
-            AiadPredictorState.path_to_datasets = AiadPredictorState.configuration_details.get("path_to_datasets").data
-            AiadPredictorState.broker_address = AiadPredictorState.configuration_details.get("broker_address").data
-            AiadPredictorState.broker_port = int(AiadPredictorState.configuration_details.get("broker_port").data)
-            AiadPredictorState.broker_username = AiadPredictorState.configuration_details.get("broker_username").data
-            AiadPredictorState.broker_password = AiadPredictorState.configuration_details.get("broker_password").data
 
-            AiadPredictorState.ai_nsa = AiadPredictorState.configuration_details.get("ai_nsa").data.lower() == "true"
-            AiadPredictorState.ai_nsa_anomaly_rate = float(AiadPredictorState.configuration_details.get("ai_nsa_anomaly_rate").data)
-            AiadPredictorState.ai_kmeans = AiadPredictorState.configuration_details.get("ai_kmeans").data.lower() == "true"
-            AiadPredictorState.ai_kmeans_anomaly_rate = float(AiadPredictorState.configuration_details.get("ai_kmeans_anomaly_rate").data)
+        # Now, override each value with an environment variable if available.
+        AiadPredictorState.number_of_days_to_use_data_from = int(
+            Utilities.get_config_value("NUMBER_OF_DAYS_TO_USE_DATA_FROM", "number_of_days_to_use_data_from")
+        )
 
-            AiadPredictorState.influxdb_hostname = AiadPredictorState.configuration_details.get("INFLUXDB_HOSTNAME").data
-            AiadPredictorState.influxdb_port = int(AiadPredictorState.configuration_details.get("INFLUXDB_PORT").data)
-            AiadPredictorState.influxdb_username = AiadPredictorState.configuration_details.get("INFLUXDB_USERNAME").data
-            AiadPredictorState.influxdb_password = AiadPredictorState.configuration_details.get("INFLUXDB_PASSWORD").data
-            AiadPredictorState.influxdb_org = AiadPredictorState.configuration_details.get("INFLUXDB_ORG").data
+        AiadPredictorState.number_of_minutes_to_infer = int(
+            Utilities.get_config_value("NUMBER_OF_MINUTES_TO_INFER", "number_of_minutes_to_infer")
+        )
 
-        #This method accesses influx db to retrieve the most recent metric values.
-            Utilities.print_with_time("The configuration effective currently is the following\n "+Utilities.get_fields_and_values(AiadPredictorState))
+        AiadPredictorState.prediction_processing_time_safety_margin_seconds = int(
+            Utilities.get_config_value("PREDICTION_PROCESSING_TIME_SAFETY_MARGIN_SECONDS", "prediction_processing_time_safety_margin_seconds")
+        )
+
+        AiadPredictorState.testing_functionality = Utilities.get_config_value(
+            "TESTING_FUNCTIONALITY", "testing_functionality"
+        ).lower() == "true"
+
+        AiadPredictorState.path_to_datasets = Utilities.get_config_value(
+            "PATH_TO_DATASETS", "path_to_datasets"
+        )
+
+        AiadPredictorState.broker_address = Utilities.get_config_value(
+            "BROKER_ADDRESS", "broker_address"
+        )
+
+        AiadPredictorState.broker_port = int(
+            Utilities.get_config_value("BROKER_PORT", "broker_port")
+        )
+
+        AiadPredictorState.broker_username = Utilities.get_config_value(
+            "BROKER_USERNAME", "broker_username"
+        )
+
+        AiadPredictorState.broker_password = Utilities.get_config_value(
+            "BROKER_PASSWORD", "broker_password"
+        )
+
+        AiadPredictorState.ai_nsa = Utilities.get_config_value(
+            "AI_NSA", "ai_nsa"
+        ).lower() == "true"
+
+        AiadPredictorState.ai_nsa_anomaly_rate = float(
+            Utilities.get_config_value("AI_NSA_ANOMALY_RATE", "ai_nsa_anomaly_rate")
+        )
+
+        AiadPredictorState.ai_kmeans = Utilities.get_config_value(
+            "AI_KMEANS", "ai_kmeans"
+        ).lower() == "true"
+
+        AiadPredictorState.ai_kmeans_anomaly_rate = float(
+            Utilities.get_config_value("AI_KMEANS_ANOMALY_RATE", "ai_kmeans_anomaly_rate")
+        )
+
+        AiadPredictorState.influxdb_hostname = Utilities.get_config_value(
+            "INFLUXDB_HOSTNAME", "INFLUXDB_HOSTNAME"
+        )
+
+        AiadPredictorState.influxdb_port = int(
+            Utilities.get_config_value("INFLUXDB_PORT", "INFLUXDB_PORT")
+        )
+
+        AiadPredictorState.influxdb_username = Utilities.get_config_value(
+            "INFLUXDB_USERNAME", "INFLUXDB_USERNAME"
+        )
+
+        AiadPredictorState.influxdb_password = Utilities.get_config_value(
+            "INFLUXDB_PASSWORD", "INFLUXDB_PASSWORD"
+        )
+
+        AiadPredictorState.influxdb_org = Utilities.get_config_value(
+            "INFLUXDB_ORG", "INFLUXDB_ORG"
+        )
+
+        #Log the effective configuration.
+        Utilities.print_with_time("The configuration effective currently is the following\n "+Utilities.get_fields_and_values(AiadPredictorState))
 
     @staticmethod
     def update_influxdb_organization_id():
