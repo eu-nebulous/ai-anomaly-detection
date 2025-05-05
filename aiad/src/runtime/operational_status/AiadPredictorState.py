@@ -30,7 +30,6 @@ class AiadPredictorState:
     influxdb_organization = "my-org"
     influxdb_organization_id = "e0033247dcca0c54"
     influxdb_token = "my-super-secret-auth-token"
-    influxdb_password = "my-password"
     influxdb_username = "my-user"
     influxdb_port = 8086
     #influxdb_hostname = "localhost"            PCF-LOCAL

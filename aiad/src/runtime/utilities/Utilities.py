@@ -97,8 +97,8 @@ class Utilities:
             "INFLUXDB_USERNAME", "INFLUXDB_USERNAME"
         )
 
-        AiadPredictorState.influxdb_password = Utilities.get_config_value(
-            "INFLUXDB_PASSWORD", "INFLUXDB_PASSWORD"
+        AiadPredictorState.influxdb_token = Utilities.get_config_value(
+            "INFLUXDB_TOKEN", "INFLUXDB_TOKEN"
         )
 
         AiadPredictorState.influxdb_org = Utilities.get_config_value(
