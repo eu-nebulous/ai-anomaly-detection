@@ -19,6 +19,7 @@ from exn import connector
 from exn.core.handler import Handler
 from exn.handler.connector_handler import ConnectorHandler
 from aiad.aiad import train_aiad, inference_aiad
+from proton import Message
 from runtime.operational_status.ApplicationState import ApplicationState
 #from runtime.predictions.Prediction import Prediction
 from runtime.utilities.PredictionPublisher import PredictionPublisher
@@ -342,7 +343,7 @@ class ConsumerHandler(Handler):
             #     'hello': 'world'
             # })
 
-    def on_message(self, key, address, body, context, **kwargs):
+    def on_message(self, key, address, body, message: Message, context):
         address = address.replace("topic://" + AiadPredictorState.GENERAL_TOPIC_PREFIX, "")
         if (address).startswith(AiadPredictorState.MONITORING_DATA_PREFIX):
             address = address.replace(AiadPredictorState.MONITORING_DATA_PREFIX, "", 1)
