@@ -356,57 +356,78 @@ class ConsumerHandler(Handler):
                 application_state = None
                 individual_application_state = {}
                 application_already_defined = application_name in AiadPredictorState.individual_application_state
+
                 if (application_already_defined and
                         (message_version == AiadPredictorState.individual_application_state[
-                            application_name].message_version)
-                ):
+                            application_name].message_version)):
                     individual_application_state = AiadPredictorState.individual_application_state
                     application_state = individual_application_state[application_name]
 
                     print_with_time("Using existing application definition for " + application_name)
                 else:
                     if (application_already_defined):
-                        print_with_time(
-                            "Updating application " + application_name + " based on new metrics list message")
+                        print_with_time("Updating application " + application_name + " based on new metrics list message")
                     else:
                         print_with_time("Creating new application " + application_name)
                     application_state = ApplicationState(application_name, message_version)
-                    
-                    
-                if application_state.start_forecasting:
-                    print_with_time("Stopping the anomaly detector for " + application_name + ". Changing start_forecasting to False to change metrics.")
-                    application_state.start_forecasting = False
 
-                    if application_name in self.prediction_thread:
-                        thread = self.prediction_thread[application_name]
-                        thread_ident = thread.ident
-                        print_with_time(f'Blocking the execution of the thread for {application_name} until it has finished --> ident: {thread_ident}.')
-                        thread.join()
+                # ----------------------------------------------------
+                # Get the new values ​​from the message
+                metric_list_object = body["metric_list"]
+                new_lower_bound_value = {}
+                new_upper_bound_value = {}
+                new_metrics_to_predict = []
+
+                for metric_object in metric_list_object:
+                    new_lower_bound_value[metric_object["name"]] = float(metric_object["lower_bound"])
+                    new_upper_bound_value[metric_object["name"]] = float(metric_object["upper_bound"])
+                    new_metrics_to_predict.append(metric_object["name"])
+
+                # ----------------------------------------------------
+                # Compare with the current state
+                changes_detected = False
+                if application_already_defined:
+                    # Compare metrics
+                    old_metrics_set = set(application_state.metrics_to_predict)
+                    new_metrics_set = set(new_metrics_to_predict)
+                    if old_metrics_set != new_metrics_set:
+                        changes_detected = True
+
+                    # Compare limits
+                    for metric in new_metrics_set:
+                        old_lower = application_state.lower_bound_value.get(metric)
+                        old_upper = application_state.upper_bound_value.get(metric)
+                        if old_lower != new_lower_bound_value[metric] or old_upper != new_upper_bound_value[metric]:
+                            changes_detected = True
+                            break
+                else:
+                    # If it didn't exist before, it's clearly a change
+                    changes_detected = True
+
+                # ----------------------------------------------------
+                if changes_detected:
+                    if application_state.start_forecasting:
+                        print_with_time("Stopping the anomaly detector for " + application_name + ". Changing start_forecasting to False to change metrics.")
+                        application_state.start_forecasting = False
+
                         if application_name in self.prediction_thread:
-                            print_with_time(f'Unblocking the execution of the thread for {application_name} --> ident: {thread_ident}.')
+                            thread = self.prediction_thread[application_name]
+                            thread_ident = thread.ident
+                            print_with_time(f'Blocking the execution of the thread for {application_name} until it has finished --> ident: {thread_ident}.')
                             del self.prediction_thread[application_name]
                             logging.info(f'Removed prediction thread for {application_name}')
-                    
-                metric_list_object = body["metric_list"]
-                # Only take into account the list of metrics received since that moment.
-                #lower_bound_value = application_state.lower_bound_value
-                #upper_bound_value = application_state.upper_bound_value
-                # End. Only take into account the list of metrics received since that moment.
-                lower_bound_value = {}
-                upper_bound_value = {}
-                metrics_to_predict = []
-                for metric_object in metric_list_object:
-                    lower_bound_value[metric_object["name"]] = float(metric_object["lower_bound"])
-                    upper_bound_value[metric_object["name"]] = float(metric_object["upper_bound"])
-                    
-                    metrics_to_predict.append(metric_object["name"])
-                
-                application_state.lower_bound_value.update(lower_bound_value)
-                application_state.upper_bound_value.update(upper_bound_value)
-                application_state.metrics_to_predict = metrics_to_predict
+                            thread.join()
+                            print_with_time(f'Unblocking the execution of the thread for {application_name} --> ident: {thread_ident}.')
+
+                    # Update values ​​only if there have been changes
+                    application_state.lower_bound_value.update(new_lower_bound_value)
+                    application_state.upper_bound_value.update(new_upper_bound_value)
+                    application_state.metrics_to_predict = new_metrics_to_predict
+                else:
+                    print_with_time(f"No changes detected for {application_name}. Ignoring metric_list message and continuing.")
+                    return  # IMPORTANT: Exit the function here without restarting anything
 
                 application_state.initial_metric_list_received = True
-
                 individual_application_state[application_name] = application_state
                 AiadPredictorState.individual_application_state.update(individual_application_state)
 
@@ -426,7 +447,6 @@ class ConsumerHandler(Handler):
                 AiadPredictorState.publishing_connector = connector.EXN(
                     'publishing_' + AiadPredictorState.forecaster_name + '-' + application_name,
                     handler=BootStrap(),
-                    # consumers=list(State.broker_consumers),
                     consumers=[],
                     publishers=AiadPredictorState.broker_publishers,
                     url=AiadPredictorState.broker_address,
@@ -434,33 +454,22 @@ class ConsumerHandler(Handler):
                     username=AiadPredictorState.broker_username,
                     password=AiadPredictorState.broker_password
                 )
-                # AiadPredictorState.publishing_connector.start()
                 thread = threading.Thread(target=AiadPredictorState.publishing_connector.start, args=())
                 thread.start()
-                
-                
-                
 
                 application_state = AiadPredictorState.individual_application_state[application_name]
                 application_state.start_forecasting = True
-                #application_state.epoch_start = body["epoch_start"]
-                #application_state.prediction_horizon = int(body["prediction_horizon"])
                 application_state.next_prediction_time = update_prediction_time(application_state.epoch_start,
                                                                                 application_state.prediction_horizon,
-                                                                                AiadPredictorState.prediction_processing_time_safety_margin_seconds)  # State.next_prediction_time was assigned the value of State.epoch_start here, but this re-initializes targeted prediction times after each start_forecasting message, which is not desired necessarily
+                                                                                AiadPredictorState.prediction_processing_time_safety_margin_seconds)
                 print_with_time(
-                    "A metric_list aiad message for " + application_name + "has been received, epoch start and prediction horizon are " + str(
+                    "A metric_list aiad message for " + application_name + " has been received, epoch start and prediction horizon are " + str(
                         application_state.epoch_start) + ", and " + str(
                         application_state.prediction_horizon) + " seconds respectively")
-                        
-                        
-                        
 
                 with open(AiadPredictorState.configuration_file_location, "r+b") as f:
-
                     AiadPredictorState.configuration_details.load(f, "utf-8")
 
-                    # Do stuff with the p object...
                     initial_seconds_aggregation_value, metadata = AiadPredictorState.configuration_details[
                         "number_of_seconds_to_aggregate_on"]
                     initial_seconds_aggregation_value = int(initial_seconds_aggregation_value)
@@ -476,9 +485,8 @@ class ConsumerHandler(Handler):
                     f.truncate(0)
                     AiadPredictorState.configuration_details.store(f, encoding="utf-8")
 
-                maximum_time_required_for_prediction = AiadPredictorState.prediction_processing_time_safety_margin_seconds  # initialization, assuming X seconds processing time to derive a first prediction
-                
-                
+                maximum_time_required_for_prediction = AiadPredictorState.prediction_processing_time_safety_margin_seconds
+
                 if application_name not in self.prediction_thread or not self.prediction_thread[application_name].is_alive():
                     print_with_time("calculate_and_publish_predictions for " + application_name)
                     thread = threading.Thread(target=calculate_and_publish_predictions,
@@ -488,10 +496,8 @@ class ConsumerHandler(Handler):
                     print_with_time(f'Thread ident: {thread.ident} for application {application_name} AFTER the start.')
                 else:
                     print_with_time(f"Thread for {application_name} is already running.")
-            
         else:
             print_with_time("Received message " + body + " but could not handle it")
-
 
 def get_dataset_file(attribute):
     pass
