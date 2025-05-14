@@ -255,7 +255,10 @@ class ApplicationState:
         metric_columns = [col for col in merged_df.columns if col not in ['Timestamp', 'ems_time']]
 
         # Remove rows where any of the values ​​are NaN or negative
-        merged_df = merged_df[~((merged_df[metric_columns] < 0).any(axis=1) | merged_df[metric_columns].isna().any(axis=1))]
+        # merged_df = merged_df[~((merged_df[metric_columns] < 0).any(axis=1) | merged_df[metric_columns].isna().any(axis=1))]
+        # Remove rows where any of the values ​​are NaN
+        merged_df = merged_df[~merged_df[metric_columns].isna().any(axis=1)]
+
 
         # Reorder columns
         merged_df = merged_df[['Timestamp', 'ems_time'] + metric_columns]
