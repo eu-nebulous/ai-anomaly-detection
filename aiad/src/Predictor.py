@@ -109,6 +109,7 @@ def calculate_and_publish_predictions(application_state, application_name, maxim
     start_forecasting = application_state.start_forecasting
     
     there_is_modeling_data = False
+    there_is_monitoring_data = False
     max_retries_modeling_data = 2
     retries_modeling_data = 0
     

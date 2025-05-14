@@ -36,7 +36,7 @@ class AiadPredictorState:
     influxdb_hostname = "nebulous-influxdb"
     path_to_datasets = "./datasets/"
     number_of_days_to_use_data_from = 2
-    number_of_minutes_to_infer = 180
+    number_of_minutes_to_infer = 60
 
     ai_nsa = True
     ai_nsa_anomaly_rate = 10            # Means percentage (10%)
