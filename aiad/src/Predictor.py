@@ -225,9 +225,9 @@ def calculate_and_publish_predictions(application_state, application_name, maxim
                                 "level": 3,
                                 "application": application_name,
                                 "timestamp": np.int64(current_time),
-                                "window_start": np.int64(prediction["data"].index.min()),
-                                "window_end": np.int64(prediction["data"].index.max()),
-                                "window_anomaly_rate": prediction["window_anomaly_rate"],
+                                "window_start": np.int64(prediction["nsa_data"].index.min()),
+                                "window_end": np.int64(prediction["nsa_data"].index.max()),
+                                "window_anomaly_rate": prediction["nsa_window_anomaly_rate"],
                                 "predictionTime": np.int64(application_state.next_prediction_time),
                                 #"metrics": application_state.metrics_to_predict
                                 "metrics": columns_with_variability
