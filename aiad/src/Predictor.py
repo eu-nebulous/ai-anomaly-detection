@@ -97,7 +97,7 @@ def convert_to_native(obj):
         return int(obj)
     elif isinstance(obj, (np.floating, np.float64)):
         return float(obj)
-    elif isinstance(obj, np.ndarray):
+    elif isinstance(obj, (np.ndarray, pd.Index)):
         return obj.tolist()  # Convert arrays to lists
     elif isinstance(obj, dict):
         return {k: convert_to_native(v) for k, v in obj.items()}
@@ -230,7 +230,7 @@ def calculate_and_publish_predictions(application_state, application_name, maxim
                                 "window_anomaly_rate": prediction["nsa_window_anomaly_rate"],
                                 "predictionTime": np.int64(application_state.next_prediction_time),
                                 #"metrics": application_state.metrics_to_predict
-                                "metrics": columns_with_variability
+                                "metrics": list(columns_with_variability)
                             }
                             # Convert message to native types
                             prediction_message_body = convert_to_native(prediction_message_body)
