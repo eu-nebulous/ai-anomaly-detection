@@ -416,7 +416,20 @@ def train_aiad(ai_nsa, ai_kmeans, data_filename, lower_bound_value, upper_bound_
     
     if train_data.empty:
         logging.error("train_data is empty after resampling and interpolation. Check data preparation steps.")
-        return None, None, None
+        return None, None, None, None
+        
+    # Remove columns with no variability
+    columns_with_variability = train_data.loc[:, train_data.nunique() > 1].columns
+    columns_removed = train_data.columns.difference(columns_with_variability)
+    
+    if not columns_with_variability.any():
+        logging.error("All columns have been discarded due to lack of variability.")
+        return None, None, None, None
+
+    if not columns_removed.empty:
+        logging.warning(f"Columns without variability have been eliminated: {list(columns_removed)}")
+
+    train_data = train_data[columns_with_variability]
 
     # Scale the data
     scaler = MinMaxScaler(feature_range=(0, 1))
@@ -436,9 +449,9 @@ def train_aiad(ai_nsa, ai_kmeans, data_filename, lower_bound_value, upper_bound_
         myKmeans = kmeans_train(train_data_scaled, ai_kmeans_num_samples_to_lag, ai_kmeans_num_samples_to_diff, ai_kmeans_num_samples_to_smooth,
                         ai_kmeans_max_iterations)
     
-    return scaler, myNSA, myKmeans
+    return columns_with_variability, scaler, myNSA, myKmeans
 
-def inference_aiad(ai_nsa, ai_kmeans, scaler, myNSA, myKmeans, data_filename, application_name):
+def inference_aiad(ai_nsa, ai_kmeans, columns_with_variability, scaler, myNSA, myKmeans, data_filename, application_name):
     # Load configuration properties
     # Determine the directory of the current script
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -469,6 +482,7 @@ def inference_aiad(ai_nsa, ai_kmeans, scaler, myNSA, myKmeans, data_filename, ap
     test_data.index = pd.to_datetime(test_data.index, unit='s')
     test_data = test_data.resample('1s').mean().interpolate()  # 1-second intervals
     test_data.index = test_data.index.astype('int64') // 10**9  # Convertir a segundos
+    test_data = test_data[columns_with_variability]
     logging.info("Data after resampling and interpolation: ***************. Testing data sample.")
     logging.info(test_data.head())
     

@@ -41,11 +41,11 @@ def BuildingAModel(application_state, next_prediction_time):
         # Get the filename with the all metrics to obatin the model
         application_state.model_data_filename = application_state.get_model_allmetrics_filename(AiadPredictorState.configuration_file_location)
         
-    scaler, myNSA, myKmeans = train_aiad(AiadPredictorState.ai_nsa, AiadPredictorState.ai_kmeans, application_state.model_data_filename, application_state.lower_bound_value, application_state.upper_bound_value)
+    columns_with_variability, scaler, myNSA, myKmeans = train_aiad(AiadPredictorState.ai_nsa, AiadPredictorState.ai_kmeans, application_state.model_data_filename, application_state.lower_bound_value, application_state.upper_bound_value)
 
-    return scaler, myNSA, myKmeans
+    return columns_with_variability, scaler, myNSA, myKmeans
 
-def TestingAModel(scaler, myNSA, myKmeans, application_state, next_prediction_time):
+def TestingAModel(columns_with_variability, scaler, myNSA, myKmeans, application_state, next_prediction_time):
 
     start_time = time.time()
 
@@ -57,7 +57,7 @@ def TestingAModel(scaler, myNSA, myKmeans, application_state, next_prediction_ti
         # Get the filename with the all metrics to infer
         application_state.prediction_data_filename = application_state.get_prediction_allmetrics_filename(AiadPredictorState.configuration_file_location)
         
-    results = inference_aiad(AiadPredictorState.ai_nsa, AiadPredictorState.ai_kmeans, scaler, myNSA, myKmeans, application_state.prediction_data_filename, application_state.application_name)
+    results = inference_aiad(AiadPredictorState.ai_nsa, AiadPredictorState.ai_kmeans, columns_with_variability, scaler, myNSA, myKmeans, application_state.prediction_data_filename, application_state.application_name)
 
     if results is not None:
         results["last_prediction_time_needed"] = int(time.time() - start_time)
@@ -148,7 +148,7 @@ def calculate_and_publish_predictions(application_state, application_name, maxim
             
         elif there_is_modeling_data is not None and there_is_modeling_data:
 
-            scaler, myNSA, myKmeans = BuildingAModel(application_state, int(application_state.next_prediction_time))
+            columns_with_variability, scaler, myNSA, myKmeans = BuildingAModel(application_state, int(application_state.next_prediction_time))
             
             if scaler is None and myNSA is None and myKmeans is None:
                 
@@ -201,7 +201,7 @@ def calculate_and_publish_predictions(application_state, application_name, maxim
                             print_with_time("Initiating predictions for all metrics for next_prediction_time, which is " + str(
                                 application_state.next_prediction_time) + " prediction_index " + str(prediction_index))
                             
-                            prediction = TestingAModel(scaler, myNSA, myKmeans, application_state, int(application_state.next_prediction_time))
+                            prediction = TestingAModel(columns_with_variability, scaler, myNSA, myKmeans, application_state, int(application_state.next_prediction_time))
 
                     except Exception as e:
                         print_with_time("Could not create a prediction for the metrics for time point " + str(
@@ -214,7 +214,7 @@ def calculate_and_publish_predictions(application_state, application_name, maxim
                     if (AiadPredictorState.disconnected or AiadPredictorState.check_stale_connection()):
                         logging.info("Possible problem due to disconnection or a stale connection")
                         # State.connection.connect()
-                    
+
                     no_publisher_something = True
                     if prediction is not None:
                         if AiadPredictorState.ai_nsa and "nsa_window_anomaly_rate" in prediction and prediction["nsa_window_anomaly_rate"] >= AiadPredictorState.ai_nsa_anomaly_rate:
@@ -229,7 +229,8 @@ def calculate_and_publish_predictions(application_state, application_name, maxim
                                 "window_end": np.int64(prediction["data"].index.max()),
                                 "window_anomaly_rate": prediction["window_anomaly_rate"],
                                 "predictionTime": np.int64(application_state.next_prediction_time),
-                                "metrics": application_state.metrics_to_predict
+                                #"metrics": application_state.metrics_to_predict
+                                "metrics": columns_with_variability
                             }
                             # Convert message to native types
                             prediction_message_body = convert_to_native(prediction_message_body)
