@@ -408,7 +408,7 @@ class ConsumerHandler(Handler):
                     changes_detected = True
 
                 # ----------------------------------------------------
-                if changes_detected:
+                if changes_detected or not application_state.start_forecasting:
                     if application_state.start_forecasting:
                         print_with_time("Stopping the anomaly detector for " + application_name + ". Changing start_forecasting to False to change metrics.")
                         application_state.start_forecasting = False
