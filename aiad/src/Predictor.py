@@ -337,8 +337,12 @@ class ConsumerHandler:
             address = address.replace(AiadPredictorState.MONITORING_DATA_PREFIX, "", 1)
 
             if address == 'metric_list':
-                application_name = body["name"]
-                message_version = body["version"]
+                application_name = body.get("name")
+                message_version = body.get("version", 0)
+
+                if not application_name:
+                    logging.warning(f"[metric_list] Invalid or missing application name in metric_list message: {body}")
+                    return                
 
                 logging.info(f"[metric_list] Received metric_list for {application_name} v{message_version}")
                 AiadPredictorState.received_applications[application_name] = message_version
@@ -347,88 +351,11 @@ class ConsumerHandler:
                     AiadPredictorState.metric_list_received = True
                     delay = AiadPredictorState.number_of_minutes_to_infer
                     delay = 0       # ELIMINAR ESTO PCF PPPPPPPPPPPPPPPPPPPPPPPPPP FFFFFFFFFFFFFFFFFFFFFFFFF
-                    threading.Timer(delay * 60, self.launch_application_threads).start()
-                    
-                    #threading.Thread(target=self.calculate_delay_and_schedule_launchNOSEUSA).start()
-                    
+                    threading.Timer(delay * 60, self.launch_application_threads).start()                    
                 else:
                     logging.info(f"[metric_list] Received another metric_list for {application_name} v{message_version}... it is NOT taken into account.")
 
                 return
-
-    def calculate_delay_and_schedule_launchBack(self):
-        logging.info("[delay] Calculating optimal delay before launching application threads...")
-        
-        min_delay_minutes = AiadPredictorState.number_of_minutes_to_infer
-
-        for app_name, version in AiadPredictorState.received_applications.items():
-            bucket = AiadPredictorState.application_name_prefix + app_name + "_bucket"
-            discovery = InstanceDiscovery(
-                influxdb_bucket=bucket,
-                influxdb_organization=AiadPredictorState.influxdb_organization
-            )
-            instances = discovery.get_all_instances()
-
-            for inst_id in instances:
-                max_time = get_max_timestamp_for_instance(bucket, inst_id)
-                if max_time:
-                    cutoff_time = max_time - timedelta(hours=3)
-                    now = datetime.utcnow()
-                    delay_minutes = max((cutoff_time - now).total_seconds() / 60, 0)
-                    min_delay_minutes = min(min_delay_minutes, delay_minutes)
-
-        logging.info(f"[delay] Final delay before launching threads: {min_delay_minutes:.2f} minutes")
-        threading.Timer(min_delay_minutes * 60, self.launch_application_threads).start()
-
-    def check_if_has_data_older_than_3hNOSEUSA(self, bucket, instance_id):
-        try:
-            client = InfluxDBClient(
-                url=AiadPredictorState.influxdb_url,
-                token=AiadPredictorState.influxdb_token,
-                org=AiadPredictorState.influxdb_organization
-            )
-            query_api = client.query_api()
-
-            query = f'''
-            from(bucket:"{bucket}")
-              |> range(start: -30d, stop: -3h)
-              |> filter(fn: (r) => r["instance"] == "{instance_id}")
-              |> keep(columns: ["_time"])
-              |> sort(columns: ["_time"], desc: true)
-              |> limit(n:1)
-            '''
-
-            tables = query_api.query(query)
-            for table in tables:
-                for record in table.records:
-                    return True  # Hay datos anteriores a 3h
-
-        except Exception as e:
-            logging.warning(f"[delay] Error checking old data for {instance_id} in bucket {bucket}: {e}")
-
-        return False  # No hay datos anteriores a 3h
-
-    def calculate_delay_and_schedule_launchNOSEUSA(self):
-        logging.info("[delay] Calculating optimal delay before launching application threads...")
-
-        min_delay_minutes = AiadPredictorState.number_of_minutes_to_infer
-
-        for app_name, version in AiadPredictorState.received_applications.items():
-            bucket = AiadPredictorState.application_name_prefix + app_name + "_bucket"
-            discovery = InstanceDiscovery(
-                influxdb_bucket=bucket,
-                influxdb_organization=AiadPredictorState.influxdb_organization
-            )
-            instances = discovery.get_all_instances()
-
-            for inst_id in instances:
-                has_old_data = self.check_if_has_data_older_than_3h(bucket, inst_id)
-                if has_old_data:
-                    min_delay_minutes = 0
-
-        logging.info(f"[delay] Final delay before launching threads: {min_delay_minutes:.2f} minutes")
-        threading.Timer(min_delay_minutes * 60, self.launch_application_threads).start()
-
 
     def launch_application_threads(self):
         logging.info("[launch] Launching application threads after delay...")
@@ -509,34 +436,6 @@ class ConsumerHandler:
         # Reprogramar esta función periódicamente
         interval = AiadPredictorState.number_of_minutes_to_detect_instances_or_check_everything_ok
         threading.Timer(interval * 60, self.monitor_and_rediscover).start()
-
-    def get_max_timestamp_for_instanceBack(bucket, instance_id):
-        try:
-            client = InfluxDBClient(
-                url=AiadPredictorState.influxdb_url,
-                token=AiadPredictorState.influxdb_token,
-                org=AiadPredictorState.influxdb_organization
-            )
-            query_api = client.query_api()
-
-            query = f'''
-            from(bucket:"{bucket}")
-              |> range(start: -30d, stop: -3h)
-              |> filter(fn: (r) => r["instance"] == "{instance_id}")
-              |> keep(columns: ["_time"])
-              |> sort(columns: ["_time"], desc: true)
-              |> limit(n:1)
-            '''
-
-            tables = query_api.query(query)
-            for table in tables:
-                for record in table.records:
-                    return record.get_time()
-
-        except Exception as e:
-            logging.warning(f"Error getting max timestamp for {instance_id} in bucket {bucket}: {e}")
-
-        return None
 
 
 def get_dataset_file(attribute):
