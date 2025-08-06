@@ -49,7 +49,6 @@ def remove_outliers_iqr(df, lower_bound_value, upper_bound_value, lower_quantile
         upper_bound = upper_bound_iqr
 
         if column in lower_bound_value:
-            lower_bound = max(lower_bound, 0)                           # Ensure non-negative lower bounds
             lower_bound = max(lower_bound, lower_bound_value[column])   # Use the more restrictive lower bound
         if column in upper_bound_value:
             upper_bound = min(upper_bound, upper_bound_value[column])   # Use the more restrictive upper bound

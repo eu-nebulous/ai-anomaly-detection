@@ -2,6 +2,7 @@ import datetime
 import logging,os
 import json
 from influxdb_client import InfluxDBClient
+#from runtime.utilities.InfluxDBConnector import InfluxDBConnector
 
 from runtime.operational_status.AiadPredictorState import AiadPredictorState
 
@@ -29,8 +30,14 @@ class Utilities:
     @staticmethod
     def load_configuration():
         # First load configuration details from the properties file.
-        with open(AiadPredictorState.configuration_file_location, 'rb') as config_file:
+        # with open(AiadPredictorState.configuration_file_location, 'rb') as config_file:
+            # AiadPredictorState.configuration_details.load(config_file)
+
+        config_file = open(AiadPredictorState.configuration_file_location, 'rb')
+        try:
             AiadPredictorState.configuration_details.load(config_file)
+        finally:
+            config_file.close()
 
         # Now, override each value with an environment variable if available.
         AiadPredictorState.number_of_days_to_use_data_from = int(
@@ -122,6 +129,21 @@ class Utilities:
                 logging.info(f"Organization Name: {org.name}, ID: {org.id}")
                 AiadPredictorState.influxdb_organization_id = org.id
                 break
+    @staticmethod
+    def update_influxdb_organization_idNewPeroNoVa():
+        logging.info("InfluxDB http://" + AiadPredictorState.influxdb_hostname + ":" + str(AiadPredictorState.influxdb_port))
+        try:
+            with InfluxDBConnector() as connector:
+                org_api = connector.client.organizations_api()
+                organizations = org_api.find_organizations()
+
+                for org in organizations:
+                    if org.name == AiadPredictorState.influxdb_organization:
+                        logging.info(f"Organization Name: {org.name}, ID: {org.id}")
+                        AiadPredictorState.influxdb_organization_id = org.id
+                        break
+        except Exception as e:
+            logging.error(f"Error retrieving InfluxDB organization ID: {e}")
     @staticmethod
     def fix_path_ending(path):
         if (path[-1] is os.sep):
