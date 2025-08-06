@@ -1,5 +1,12 @@
+# Copyright (c) 2023 Institute of Communication and Computer Systems
+#
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.        
+
 import threading, logging
 
+#from influxdb_client import InfluxDBClient
 from jproperties import Properties
 
 class AiadPredictorState:
@@ -25,17 +32,14 @@ class AiadPredictorState:
     influxdb_token = "my-super-secret-auth-token"
     influxdb_username = "my-user"
     influxdb_port = 8086
-    influxdb_hostname = "localhost"            # PCF-LOCAL
-    #influxdb_hostname = "nebulous-influxdb"
+    #influxdb_hostname = "localhost"            PCF-LOCAL
+    influxdb_hostname = "nebulous-influxdb"
     path_to_datasets = "./datasets/"
-    #number_of_days_to_use_data_from = 2    PONER ESTE VALOR
-    number_of_days_to_use_data_from = 30
-    #number_of_minutes_to_infer = 1    #PCF-LOCAL
-    number_of_minutes_to_infer = 180    # 3 hours
+    number_of_days_to_use_data_from = 2
+    number_of_minutes_to_infer = 180
     number_of_minutes_to_start_inference = 2
     number_of_minutes_to_detect_instances_or_check_everything_ok = 10
     min_number_of_records_to_model = 60
-
 
     ai_nsa = True
     ai_nsa_anomaly_rate = 10            # Means percentage (10%)
@@ -57,15 +61,15 @@ class AiadPredictorState:
     broker_publishers = []
     broker_consumers = []
     connector = None
-    broker_address = "158.37.63.86"       #PCF-LOCAL
-    #broker_address = "nebulous-activemq"
+    # PCF USO OTRA ADDRESS broker_address = "localhost"
+    # broker_address = "158.37.63.86"
+    broker_address = "nebulous-activemq"
     # PCF USO OTRO PUERTO PARA PROBAR broker_port = 5672
-    broker_port = 32754                    #PCF-LOCAL
-    #broker_port = 5672
+    #broker_port = 32754                    PCF-LOCAL
+    broker_port = 5672
     broker_username = "admin"
     #broker_password = "admin"
     broker_password = "nebulous"
-    
     prediction_thread = {}
     applications_state = {}
     received_applications = {}
