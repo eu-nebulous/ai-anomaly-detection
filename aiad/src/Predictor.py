@@ -340,7 +340,7 @@ class ConsumerHandler:
                 application_name = body.get("name")
                 message_version = body.get("version", 0)
 
-                if not application_name:
+                if not application_name or application_name is None:
                     logging.warning(f"[metric_list] Invalid or missing application name in metric_list message: {body}")
                     return                
 
