@@ -13,8 +13,8 @@ import pandas as pd
 from influxdb_client.rest import ApiException
 from runtime.operational_status.MetricDiscovery import MetricDiscovery
 
-MAX_RETRIES = 5  # Número máximo de reintentos
-RETRY_DELAY = 5  # Retraso inicial entre reintentos en segundos
+MAX_RETRIES = 5  # Maximum number of retries
+RETRY_DELAY = 5  # Initial delay between retries in seconds
 
 class ApplicationState:
 
@@ -41,7 +41,7 @@ class ApplicationState:
 
         # Obtain metrics dynamically
         discovery = MetricDiscovery(self.influxdb_bucket, AiadPredictorState.influxdb_organization)
-        self.allowed_metrics = discovery.get_allowed_metrics(instance)
+        self.allowed_metrics = discovery.get_allowed_metrics(instance, AiadPredictorState.number_of_days_to_use_data_from)
         logging.info(f"[ApplicationState] allowed_metrics for {application_name}@{instance}: {self.allowed_metrics}")
 
         # self.allowed_metrics = [
@@ -208,22 +208,22 @@ class ApplicationState:
                             time.sleep(RETRY_DELAY * (2 ** (retry_count - 1)))  # Retraso exponencial
                         else:
                             logging.error(f"Maximum retries reached for metric {metric_name}.")
-                            return None
+                            return False
                     except Exception as e:
                         logging.error(f"Module update_model_data. Unexpected error while querying metric {metric_name}: {str(e)}")
-                        return None
+                        return False
                 if not success:
                     # If unsuccessful after retries, return an error
                     logging.error(f"Failed to process metric {metric_name} after {retry_count} retries.")
-                    return None
+                    return False
             self.allowed_metrics = allowed_metrics_aux
             if not self.allowed_metrics:
-                return None
+                return False
             return self._merge_datasets(self.get_model_data_filename, self.get_model_allmetrics_filename(AiadPredictorState.configuration_file_location))
         except Exception as e:
             Utilities.print_with_time("Error in update_model_data")
             logging.error(traceback.format_exc())
-            return None
+            return False
 
     def update_monitoring_data(self):
         Utilities.print_with_time("Starting dataset creation process (update_monitoring_data)...")
@@ -261,63 +261,22 @@ class ApplicationState:
                             time.sleep(RETRY_DELAY * (2 ** (retry_count - 1)))  # Retraso exponencial
                         else:
                             logging.error(f"[update_monitoring_data] Timeout error for metric {metric_name}: {str(e)}. Maximum retries reached.")
-                            return None
+                            return False
                     except Exception as e:
                         logging.error(f"[update_monitoring_data] Unexpected error while querying metric {metric_name}: {str(e)}")
-                        return None
+                        return False
                 if not success:
                     # If unsuccessful after retries, return an error
                     logging.error(f"[update_monitoring_data] Failed to process metric {metric_name} after {retry_count} retries.")
-                    return None
+                    return False
             self.allowed_metrics = allowed_metrics_aux
+            if not self.allowed_metrics:
+                return False
             return self._merge_datasets(self.get_prediction_data_filename, self.get_prediction_allmetrics_filename(AiadPredictorState.configuration_file_location))
         except Exception as e:
             Utilities.print_with_time("[update_monitoring_data] Error in update_monitoring_data module.")
             logging.error(traceback.format_exc())
-            return None
-
-    def _query_influxdbBack(self, model_data, metric_name, destination_key, past_days=0, past_minutes=0):
-        current_time = time.time()
-        if model_data:
-            start_time = current_time - (past_days * 24 * 60 * 60) - (past_minutes * 60)
-            #end_time = current_time - (past_minutes * 60)      # DEBERIA QUEDAR ESTO ESPERANDO QUE EXISTAN DATOS ANTES DE PREDECIR
-            end_time = current_time                             # ELIMINAR ESTO PCF
-        else:
-            start_time = current_time - (past_minutes * 60)
-            end_time = current_time
-        start_time_iso = datetime.utcfromtimestamp(start_time).isoformat() + "Z"
-        end_time_iso = datetime.utcfromtimestamp(end_time).isoformat() + "Z"
-
-        destination_key_orig = destination_key
-        destination_key_orig = destination_key_orig.replace("---", ", ")
-        destination_key_orig = destination_key_orig.replace("--", ",")
-        query_string = (
-            f'from(bucket: "{self.influxdb_bucket}") '
-            f'|> range(start: {start_time_iso}, stop: {end_time_iso}) '
-            f'|> filter(fn: (r) => r["_measurement"] == "{metric_name}" and r["instance"] == "{self.instance}" and r["destination_key"] == "{destination_key_orig}")'
-        )
-
-        influx_connector = None
-        try:
-            influx_connector = InfluxDBConnector()
-            logging.info(f"Performing query: {query_string}")
-            # Try to query InfluxDB
-            return influx_connector.client.query_api().query(query_string, AiadPredictorState.influxdb_organization)
-        except ApiException as e:
-            # Specifically handle ApiException exception
-            if e.status == 404:
-                error_message = e.body.decode('utf-8') if hasattr(e.body, 'decode') else e.body
-                logging.error(f"Bucket not found: {self.influxdb_bucket}. Details: {error_message}")
-                raise ValueError(f"Bucket '{self.influxdb_bucket}' does not exist. Please check the configuration.") from e
-            else:
-                logging.error(f"API exception occurred: {str(e)}")
-                raise
-        except Exception as e:
-            # Catch any other exceptions
-            logging.error(f"Unexpected error: {str(e)}")
-            raise
-        finally:
-            influx_connector.close()  
+            return False
 
     def _query_influxdb(self, model_data, metric_name, destination_key, past_days=0, past_minutes=0):
         current_time = time.time()
@@ -376,7 +335,6 @@ class ApplicationState:
 
         logging.error(f"[InfluxDB] Maximum retries reached for metric {metric_name}.")
         return None
-
 
     def _save_to_csv(self, result, filename, metric_destination):
         with open(filename, "w") as file:

@@ -48,16 +48,23 @@ class InstanceDiscovery:
         self.influxdb_bucket = influxdb_bucket
         self.influxdb_organization = influxdb_organization
 
-    def get_all_instances(self):
+    def get_all_instances(self, number_of_days_to_use_data_from):
         query_string = (
             f'from(bucket: "{self.influxdb_bucket}") '
-            f'|> range(start: -3h) '
+            f'|> range(start: -{number_of_days_to_use_data_from}d) '
             f'|> filter(fn: (r) => r["_measurement"] =~ /^adt_/) '
             f'|> keep(columns: ["instance"]) '
             f'|> distinct(column: "instance")'
+            f'|> limit(n: 10)'
         )
+        # query_string = (
+            # f'from(bucket: "{self.influxdb_bucket}") '
+            # f'|> range(start: -{number_of_days_to_use_data_from}d) '
+            # f'|> filter(fn: (r) => r["_measurement"] =~ /^adt_/) '
+            # f'|> distinct(column: "instance")'
+        # )
 
-        logging.info(f"[InstanceDiscovery] Querying InfluxDB for distinct instances:\n{query_string}")
+        logging.info(f"[InstanceDiscovery] Querying InfluxDB for different instances over the last {number_of_days_to_use_data_from} days:\n{query_string}")
 
         retry_count = 0
         while retry_count < MAX_RETRIES:
@@ -73,12 +80,13 @@ class InstanceDiscovery:
                         if instance_value:
                             instances.add(instance_value)
 
+                logging.info(f"[InstanceDiscovery] Instances {instances}.")
                 return list(instances)
 
             except (requests.exceptions.ReadTimeout, requests.exceptions.Timeout, urllib3.exceptions.ReadTimeoutError) as e:
                 retry_count += 1
                 logging.error(f"[InstanceDiscovery] Timeout error: {e}. Retrying {retry_count}/{MAX_RETRIES}...")
-                time.sleep(RETRY_DELAY * (2 ** (retry_count - 1)))  # backoff exponencial
+                time.sleep(RETRY_DELAY * (2 ** (retry_count - 1)))  # exponential backoff
 
             except Exception as e:
                 retry_count += 1

@@ -366,7 +366,7 @@ class ConsumerHandler:
                 influxdb_bucket=bucket,
                 influxdb_organization=AiadPredictorState.influxdb_organization
             )
-            instances = discovery.get_all_instances()
+            instances = discovery.get_all_instances(AiadPredictorState.number_of_days_to_use_data_from)
 
             for inst_id in instances:
                 app_instance_id = f"{app_name}@{inst_id}"
@@ -391,7 +391,7 @@ class ConsumerHandler:
                     thread.start()
                     AiadPredictorState.prediction_thread[app_instance_id] = thread
                     
-                    time.sleep(20)     # To avoid saturation 20 seconds
+                    time.sleep(30)     # To avoid saturation 30 seconds
 
         # Programar la siguiente verificación periódica
         interval = AiadPredictorState.number_of_minutes_to_detect_instances_or_check_everything_ok
@@ -406,7 +406,7 @@ class ConsumerHandler:
                 influxdb_bucket=bucket,
                 influxdb_organization=AiadPredictorState.influxdb_organization
             )
-            instances = discovery.get_all_instances()
+            instances = discovery.get_all_instances(AiadPredictorState.number_of_days_to_use_data_from)
 
             for inst_id in instances:
                 app_instance_id = f"{app_name}@{inst_id}"

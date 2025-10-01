@@ -1,19 +1,10 @@
-# Las aplicaciones
-# - influxdb_bucket = "nebulous_ApplicationPaula_bucket"
-# - influxdb_bucket = "nebulous_Application2Paula_bucket"
-# deben crearse a través de http://localhost:8086/signin    login: my-user  password: my-password
-# 
-#
-# IMPORTANT: Please, change what you want before running!!!
-# Ver 'ANALIZAR PAULA' y modificar según lo que se desea realizar
-# python generating_influxdb_data.py
-#
 # para probar el entorno 
 # python testing_entorno_simulado.py
 #
 import sys
 from unittest.mock import MagicMock
 import time
+from proton import Message
 
 # Asegúrate de que 'runtime' esté en el sys.path
 sys.path.append('./runtime')
@@ -28,120 +19,49 @@ consumer_handler = ConsumerHandler()
 mock_context = MagicMock()
 mock_context.has_publisher.return_value = True
 mock_context.publishers = {'state': MagicMock()}
+mock_message = Message()
+
 
 # *********************************************************************************************
 key = "example_key"
 address = "topic://eu.nebulouscloud.monitoring.metric_list"
 body = {
-    "name": "ApplicationPaula",
+    #"name": "7d634646-6598-48b5-ab75-9b864bea12d9",
+    "name": "133c50df-c7c2-4c2b-83e3-689cae735607",
     "version": 1,
     "metric_list": [
-        {"name": "system_cpu_user", "lower_bound": 0.0, "upper_bound": 100.0},
-        {"name": "system_ram_used", "lower_bound": 0.0, "upper_bound": 10000.0},
-        {"name": "system_cpu_system", "lower_bound": 0.0, "upper_bound": 100.0},
+        {"name": "system_cpu_user", "lower_bound": "-Infinity", "upper_bound": "Infinity"},
+        {"name": "system_ram_used", "lower_bound": "-Infinity", "upper_bound": "Infinity"},
+        {"name": "system_cpu_system", "lower_bound": "-Infinity", "upper_bound": "Infinity"},
     ],
 }
 kwargs = {}
 
 # Enviar el mensaje al método
-consumer_handler.on_message(key, address, body, mock_context, **kwargs)
-print('A message metric_list has been sent.... #1 #####################################################')
+consumer_handler.on_message(key, address, body, mock_message, mock_context)
+print('A message metric_list has been sent.... #0 #####################################################')
 
-# *********************************************************************************************
-
-waiting_time = 20
-print('Waiting ' + str(waiting_time) + ' seconds to send a metric_list message')
+waiting_time = 180
+print('Waiting ' + str(waiting_time) + ' seconds to send another metric_list message. Paula')
 time.sleep(waiting_time) # wait X seconds
 
-# *********************************************************************************************
+
 key = "example_key"
 address = "topic://eu.nebulouscloud.monitoring.metric_list"
 body = {
-    "name": "Application2Paula",
+    #"name": "7d634646-6598-48b5-ab75-9b864bea12d9",
+    "name": "133c50df-c7c2-4c2b-83e3-689cae735607",
     "version": 1,
     "metric_list": [
-        {"name": "system_cpu_user", "lower_bound": 0.0, "upper_bound": 100.0},
-        {"name": "system_ram_used", "lower_bound": 0.0, "upper_bound": 10000.0},
-        {"name": "system_cpu_system", "lower_bound": 0.0, "upper_bound": 100.0},
+        {"name": "system_cpu_user", "lower_bound": "-Infinity", "upper_bound": "Infinity"},
+        {"name": "system_ram_used", "lower_bound": "-Infinity", "upper_bound": "Infinity"},
+        {"name": "system_cpu_system", "lower_bound": "-Infinity", "upper_bound": "Infinity"},
     ],
 }
 kwargs = {}
 
 # Enviar el mensaje al método
-consumer_handler.on_message(key, address, body, mock_context, **kwargs)
-print('A message metric_list has been sent.... #2 #####################################################')
+consumer_handler.on_message(key, address, body, mock_message, mock_context)
+print('A message metric_list has been sent.... #0 #####################################################')
 
-# *********************************************************************************************
 
-waiting_time = 500
-print('Waiting ' + str(waiting_time) + ' seconds to send a metric_list message')
-time.sleep(waiting_time) # wait X seconds... more than one interval (now 500 seconds)
-
-# *********************************************************************************************
-
-key = "example_key"
-address = "topic://eu.nebulouscloud.monitoring.metric_list"
-body = {
-    "name": "ApplicationPaula",
-    "version": 1,
-    "metric_list": [
-        {"name": "system_cpu_user", "lower_bound": 0.0, "upper_bound": 100.0},
-        {"name": "system_ram_used", "lower_bound": 0.0, "upper_bound": 8000.0},
-        {"name": "system_cpu_system", "lower_bound": 0.0, "upper_bound": 100.0},
-    ],
-}
-kwargs = {}
-
-# Enviar el mensaje al método
-consumer_handler.on_message(key, address, body, mock_context, **kwargs)
-print('A message metric_list has been sent.... #3 #####################################################')
-
-# *********************************************************************************************
-
-waiting_time = 500
-print('Waiting ' + str(waiting_time) + ' seconds to send a metric_list message')
-time.sleep(waiting_time) # wait X seconds... more than one interval (now 500 seconds)
-
-# *********************************************************************************************
-
-key = "example_key"
-address = "topic://eu.nebulouscloud.monitoring.metric_list"
-body = {
-    "name": "ApplicationPaula",
-    "version": 1,
-    "metric_list": [
-        {"name": "system_cpu_user", "lower_bound": 0.0, "upper_bound": 50.0},
-        {"name": "system_ram_used", "lower_bound": 0.0, "upper_bound": 6000.0},
-        {"name": "system_cpu_system", "lower_bound": 0.0, "upper_bound": 50.0},
-    ],
-}
-kwargs = {}
-
-# Enviar el mensaje al método
-consumer_handler.on_message(key, address, body, mock_context, **kwargs)
-print('A message metric_list has been sent.... #4 #####################################################')
-
-# *********************************************************************************************
-
-waiting_time = 500
-print('Waiting ' + str(waiting_time) + ' seconds to send a metric_list message')
-time.sleep(waiting_time) # wait X seconds... more than one interval (now 500 seconds)
-
-# *********************************************************************************************
-
-key = "example_key"
-address = "topic://eu.nebulouscloud.monitoring.metric_list"
-body = {
-    "name": "ApplicationPaula",
-    "version": 1,
-    "metric_list": [
-        {"name": "system_cpu_user", "lower_bound": 0.0, "upper_bound": 100.0},
-        {"name": "system_ram_used", "lower_bound": 0.0, "upper_bound": 10000.0},
-        {"name": "system_cpu_system", "lower_bound": 0.0, "upper_bound": 100.0},
-    ],
-}
-kwargs = {}
-
-# Enviar el mensaje al método
-consumer_handler.on_message(key, address, body, mock_context, **kwargs)
-print('A message metric_list has been sent.... #4 #####################################################')
