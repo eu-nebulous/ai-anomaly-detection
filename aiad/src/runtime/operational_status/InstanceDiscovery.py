@@ -1,39 +1,3 @@
-# import logging
-# from runtime.utilities.InfluxDBConnector import InfluxDBConnector
-
-# class InstanceDiscovery:
-    # def __init__(self, influxdb_bucket, influxdb_organization):
-        # self.influxdb_bucket = influxdb_bucket
-        # self.influxdb_organization = influxdb_organization
-
-    # def get_all_instances(self):
-        # query_string = (
-            # f'from(bucket: "{self.influxdb_bucket}") '
-            # f'|> range(start: -3h) '
-            # f'|> filter(fn: (r) => r["_measurement"] =~ /^adt_/) '
-            # f'|> keep(columns: ["instance"]) '
-            # f'|> distinct(column: "instance")'
-        # )
-
-        # logging.info(f"[InstanceDiscovery] Querying InfluxDB for distinct instances:\n{query_string}")
-        
-        # try:
-            # influx_connector = InfluxDBConnector()
-            # tables = influx_connector.client.query_api().query(query_string, self.influxdb_organization)
-            # instances = set()
-
-            # for table in tables:
-                # for record in table.records:
-                    # instance_value = record.get_value()
-                    # if instance_value:
-                        # instances.add(instance_value)
-
-            # return list(instances)
-
-        # except Exception as e:
-            # logging.error(f"[InstanceDiscovery] Error retrieving instances from InfluxDB: {e}")
-            # return []
-
 import logging
 import time
 import requests
@@ -57,12 +21,6 @@ class InstanceDiscovery:
             f'|> distinct(column: "instance")'
             f'|> limit(n: 10)'
         )
-        # query_string = (
-            # f'from(bucket: "{self.influxdb_bucket}") '
-            # f'|> range(start: -{number_of_days_to_use_data_from}d) '
-            # f'|> filter(fn: (r) => r["_measurement"] =~ /^adt_/) '
-            # f'|> distinct(column: "instance")'
-        # )
 
         logging.info(f"[InstanceDiscovery] Querying InfluxDB for different instances over the last {number_of_days_to_use_data_from} days:\n{query_string}")
 

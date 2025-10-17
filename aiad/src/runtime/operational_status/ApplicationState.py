@@ -182,7 +182,6 @@ class ApplicationState:
                     try:
                         current_time = time.time()
                         result = self._query_influxdb(True, metric_name, destination_key, past_days=AiadPredictorState.number_of_days_to_use_data_from, past_minutes=AiadPredictorState.number_of_minutes_to_infer)
-                        #metric_destination = f"{self.instance}_{metric_name}_{destination_key}"
                         metric_destination = f"{metric_name}_{destination_key}"
                         #if result:
                         total_records = sum(len(table.records) for table in result)
@@ -237,7 +236,6 @@ class ApplicationState:
                     try:
                         current_time = time.time()
                         result = self._query_influxdb(False, metric_name, destination_key, past_minutes=AiadPredictorState.number_of_minutes_to_infer)
-                        #metric_destination = f"{self.instance}_{metric_name}_{destination_key}"
                         metric_destination = f"{metric_name}_{destination_key}"
                         total_records = sum(len(table.records) for table in result)
                         if result:
@@ -282,8 +280,7 @@ class ApplicationState:
         current_time = time.time()
         if model_data:
             start_time = current_time - (past_days * 24 * 60 * 60) - (past_minutes * 60)
-            #end_time = current_time - (past_minutes * 60)      # DEBERIA QUEDAR ESTO ESPERANDO QUE EXISTAN DATOS ANTES DE PREDECIR
-            end_time = current_time                             # ELIMINAR ESTO PCF
+            end_time = current_time - (past_minutes * 60)
         else:
             start_time = current_time - (past_minutes * 60)
             end_time = current_time
@@ -303,7 +300,7 @@ class ApplicationState:
             influx_connector = None
             try:
                 influx_connector = InfluxDBConnector(timeout=30000)  # 30 segundos
-                logging.info(f"Performing query: {query_string}")
+                # logging.info(f"Performing query: {query_string}")
                 return influx_connector.client.query_api().query(query_string, AiadPredictorState.influxdb_organization)
 
             except (requests.exceptions.ReadTimeout, requests.exceptions.Timeout, urllib3.exceptions.ReadTimeoutError) as e:
@@ -345,59 +342,57 @@ class ApplicationState:
                     epoch_time = int(dt.timestamp())
                     metric_value = record.get_value()
                     file.write(f"{epoch_time},{epoch_time},{metric_value}\n")
-        logging.info(f"Data saved to {filename}")
+        # logging.info(f"Data saved to {filename}")
 
     def _merge_datasets(self, get_filename_func, output_filename):
-        merged_df = pd.DataFrame()
-        #for metric_name in self.metrics_to_predict:
+        all_data = []
+
+        # Read and prepare each metric
         for metric_name, destination_key in self.allowed_metrics:
-            #metric_destination = f"{self.instance}_{metric_name}_{destination_key}"
             metric_destination = f"{metric_name}_{destination_key}"
-
-            # Read CSV file
             data = pd.read_csv(get_filename_func(AiadPredictorState.configuration_file_location, metric_destination))
-            
-            # Extract the metric column name from the file (assuming it is the third column... the last column)
-            metric_name2 = data.columns[-1]
-            
-            # Set 'ems_time' as index and convert it to datetime
-            data.set_index("ems_time", inplace=True)
-            data.index = pd.to_datetime(data.index, unit="s")
-            
-            # Resample at 1 second intervals and fill values ​​by interpolation
-            data = data.resample('1s').mean().interpolate()
-            
-            # Reset index
-            data.reset_index(inplace=True)
-            
-            # Rename the metric column. There is no need to rename metric_destination to metric_name2 since they are the same!!!
-            # data.rename(columns={metric_destination: metric_name2}, inplace=True)
-            
-            # Merge the data into the main DataFrame
-            if merged_df.empty:
-                merged_df = data
-            else:
-                merged_df = pd.merge(merged_df, data, on=["Timestamp", "ems_time"], how="outer")
-                
-        # Sort by 'ems_time'
-        merged_df.sort_values(by='ems_time', inplace=True)
-        
-        merged_df['Timestamp'] = merged_df['Timestamp'].astype(int)
-        merged_df['ems_time'] = merged_df['Timestamp']
-        
-        # Determine columns with metrics (excluding 'Timestamp' and 'ems_time')
-        metric_columns = [col for col in merged_df.columns if col not in ['Timestamp', 'ems_time']]
 
-        # Remove rows where any of the values ​​are NaN or negative
-        # merged_df = merged_df[~((merged_df[metric_columns] < 0).any(axis=1) | merged_df[metric_columns].isna().any(axis=1))]
-        # Remove rows where any of the values ​​are NaN
-        merged_df = merged_df[~merged_df[metric_columns].isna().any(axis=1)]
+            # Metric name (last column)
+            metric_col = data.columns[-1]
 
+            # Convert ems_time to datetime and round to the nearest minute
+            data["ems_time"] = pd.to_datetime(data["ems_time"], unit="s").dt.floor("min")
+
+            # If there are multiple samples in the same minute, aggregate (e.g., mean)
+            data = data.groupby("ems_time")[metric_col].mean().reset_index()
+
+            # Save dataset with ems_time as index
+            all_data.append(data.set_index("ems_time"))
+
+        # Create a base index with all minutes from minimum to maximum
+        min_time = min(df.index.min() for df in all_data)
+        max_time = max(df.index.max() for df in all_data)
+        full_index = pd.date_range(start=min_time, end=max_time, freq="min")
+
+        # Reindex each metric based on the base index
+        aligned_data = []
+        for df in all_data:
+            aligned_data.append(df.reindex(full_index))
+
+        # Join everything into a single DataFrame
+        merged_df = pd.concat(aligned_data, axis=1)
+
+        # Index as an ems_time column
+        merged_df.index.name = "ems_time"
+        merged_df.reset_index(inplace=True)
+
+        # Create a Timestamp column and force ems_time to epoch seconds
+        merged_df["Timestamp"] = (merged_df["ems_time"].astype("int64") // 10**9).astype(int)
+        merged_df["ems_time"] = merged_df["Timestamp"]
 
         # Reorder columns
-        merged_df = merged_df[['Timestamp', 'ems_time'] + metric_columns]
+        metric_columns = [col for col in merged_df.columns if col not in ["Timestamp", "ems_time"]]
+        merged_df = merged_df[["Timestamp", "ems_time"] + metric_columns]
 
-        # Save the result in a single CSV file
+        # Filling NaNs: linear interpolation + extremes to 0
+        merged_df[metric_columns] = merged_df[metric_columns].interpolate(method='linear').fillna(0)
+
+        # Save CSV
         merged_df.to_csv(output_filename, index=False)
-        logging.info(f"Combined data saved to {output_filename}")
+        # logging.info(f"Combined data saved to {output_filename}")
         return True

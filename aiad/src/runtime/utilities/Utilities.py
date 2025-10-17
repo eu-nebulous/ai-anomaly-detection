@@ -2,7 +2,6 @@ import datetime
 import logging,os
 import json
 from influxdb_client import InfluxDBClient
-#from runtime.utilities.InfluxDBConnector import InfluxDBConnector
 
 from runtime.operational_status.AiadPredictorState import AiadPredictorState
 
@@ -46,6 +45,14 @@ class Utilities:
 
         AiadPredictorState.number_of_minutes_to_infer = int(
             Utilities.get_config_value("NUMBER_OF_MINUTES_TO_INFER", "number_of_minutes_to_infer")
+        )
+
+        AiadPredictorState.number_of_minutes_to_detect_instances_or_check_everything_ok = int(
+            Utilities.get_config_value("NUMBER_OF_MINUTES_TO_DETECT_INSTANCES_OR_CHECK_EVERYTHING_OK", "number_of_minutes_to_detect_instances_or_check_everything_ok")
+        )
+
+        AiadPredictorState.min_number_of_records_to_model = int(
+            Utilities.get_config_value("MIN_NUMBER_OF_RECORDS_TO_MODEL", "min_number_of_records_to_model")
         )
 
         AiadPredictorState.prediction_processing_time_safety_margin_seconds = int(

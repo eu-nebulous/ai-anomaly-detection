@@ -53,6 +53,7 @@ class NSA:
         self.dimension = dimension
         self.percentage = percentage
         self.self_radio = np.sqrt(self.dimension) * self.percentage
+        self.anomaly_radio_threshold = np.sqrt(self.dimension) * self.percentage
         self.algorithm = algorithm
         self.n_neighbors = n_neighbors
         self.algor_0 =  None
@@ -261,3 +262,23 @@ class NSA:
         logger.info(f"*** len self.t_cells after finetune: {len(self.t_cells)}")
                 
         return
+
+    def compute_dynamic_threshold(self, self_data, percentile=95):
+        """
+        Calcula un umbral de radio (anomaly_radio_threshold) dinámico
+        basado en las distancias dentro del conjunto 'self'.
+        """
+        if self.algorithm == 1:
+            distances, _ = self.algor_0.kneighbors(self_data, n_neighbors=2)
+            min_dists = distances[:, 1]  # el segundo más cercano (el primero es el mismo punto)
+        elif self.algorithm in [2, 3]:  # KDTree o BallTree
+            distances, _ = self.algor_0.query(self_data, k=2)
+            min_dists = distances[:, 1]
+        else:
+            raise ValueError("Algorithm not supported for threshold computation")
+
+        # Calcula percentil
+        threshold = np.percentile(min_dists, percentile)
+        self.anomaly_radio_threshold = threshold
+        print(f"🔧 Dynamic anomaly_radio_threshold set to {threshold:.6f} (percentile {percentile})")
+        return threshold

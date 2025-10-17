@@ -28,19 +28,15 @@ class AiadPredictorState:
     influxdb_hostname = "localhost"            # PCF-LOCAL
     #influxdb_hostname = "nebulous-influxdb"
     path_to_datasets = "./datasets/"
-    #number_of_days_to_use_data_from = 2    PONER ESTE VALOR
     number_of_days_to_use_data_from = 1
-    #number_of_minutes_to_infer = 1    #PCF-LOCAL
-    number_of_minutes_to_infer = 180    # 3 hours
-    number_of_minutes_to_start_inference = 2
+    number_of_minutes_to_infer = 120    # 2 hours
     number_of_minutes_to_detect_instances_or_check_everything_ok = 10
-    min_number_of_records_to_model = 60
-
+    min_number_of_records_to_model = 50
 
     ai_nsa = True
-    ai_nsa_anomaly_rate = 10            # Means percentage (10%)
+    ai_nsa_anomaly_rate = 20            # Means percentage (20%)
     ai_kmeans = True
-    ai_kmeans_anomaly_rate = 10         # Means percentage (10%)
+    ai_kmeans_anomaly_rate = 20         # Means percentage (20%)
 
     configuration_file_location="aiad/prediction_configuration.properties"
     configuration_details = Properties()

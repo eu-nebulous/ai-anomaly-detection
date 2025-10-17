@@ -8,7 +8,7 @@ class InfluxDBConnector:
     def __init__(self, timeout=30000):
         self.client = InfluxDBClient(url="http://" + AiadPredictorState.influxdb_hostname + ":" + str(AiadPredictorState.influxdb_port), token=AiadPredictorState.influxdb_token, org=AiadPredictorState.influxdb_organization, timeout=timeout)
         self.write_api = self.client.write_api(write_options=SYNCHRONOUS)
-        logging.info("Successfully created InfluxDB connector, client is "+str(self.client))
+        # logging.info("Successfully created InfluxDB connector, client is "+str(self.client))
     def write_data(self,data,bucket):
         self.write_api.write(bucket=bucket, org=AiadPredictorState.influxdb_organization, record=data, write_precision=WritePrecision.S)
 
@@ -27,42 +27,6 @@ class InfluxDBConnector:
     def close(self):
         try:
             self.client.close()
-            logging.info("InfluxDB client closed successfully.")
+            # logging.info("InfluxDB client closed successfully.")
         except Exception as e:
             logging.warning(f"Error closing InfluxDB client: {e}")
-
-
-# class InfluxDBConnectorNewPeroNoVa:
-    # def __init__(self):
-        # self.client = InfluxDBClient(
-            # url="http://" + AiadPredictorState.influxdb_hostname + ":" + str(AiadPredictorState.influxdb_port),
-            # token=AiadPredictorState.influxdb_token,
-            # org=AiadPredictorState.influxdb_organization
-        # )
-        # self.write_api = self.client.write_api(write_options=SYNCHRONOUS)
-        # logging.info("Successfully created InfluxDB connector, client is " + str(self.client))
-
-    # def __enter__(self):
-        # return self
-
-    # def __exit__(self, exc_type, exc_val, exc_tb):
-        # try:
-            # self.client.close()
-            # logging.info("InfluxDB client closed successfully.")
-        # except Exception as e:
-            # logging.warning(f"Error closing InfluxDB client: {e}")
-
-    # def write_data(self, data, bucket):
-        # self.write_api.write(bucket=bucket, org=AiadPredictorState.influxdb_organization,
-                             # record=data, write_precision=WritePrecision.S)
-
-    # def get_data(self):
-        # query_api = self.client.query_api()
-        # query = """from(bucket: "nebulous")
-         # |> range(start: -1m)
-         # |> filter(fn: (r) => r._measurement == "temperature")"""
-        # tables = query_api.query(query, org=AiadPredictorState.influxdb_organization)
-
-        # for table in tables:
-            # for record in table.records:
-                # print(record)

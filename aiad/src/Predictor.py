@@ -34,7 +34,7 @@ def BuildingAModel(application_state, next_prediction_time):
         print_with_time("Testing mode. Building the model for the Anomaly Detector with the ./datasets/_ApplicationPaula-model2.csv file.")
         application_state.model_data_filename = './datasets/_ApplicationPaula-model2.csv'
     else:
-        print_with_time("Building the model for the Anomaly Detector with real data.")
+        # print_with_time("Building the model for the Anomaly Detector with real data.")
         # Get the filename with the all metrics to obatin the model
         application_state.model_data_filename = application_state.get_model_allmetrics_filename(AiadPredictorState.configuration_file_location)
         
@@ -50,7 +50,7 @@ def TestingAModel(columns_with_variability, scaler, myNSA, myKmeans, application
         print_with_time("Testing mode. Inferring anomaly data with the ./datasets/_ApplicationPaula-test2.csv file.")
         application_state.prediction_data_filename = './datasets/_ApplicationPaula-test2.csv'
     else:
-        print_with_time("Inferring anomaly data with with real data.")
+        # print_with_time("Inferring anomaly data with with real data.")
         # Get the filename with the all metrics to infer
         application_state.prediction_data_filename = application_state.get_prediction_allmetrics_filename(AiadPredictorState.configuration_file_location)
         
@@ -102,9 +102,9 @@ def convert_to_native(obj):
         return [convert_to_native(i) for i in obj]
     return obj
 
-def calculate_and_publish_predictions(application_state, app_instance_id, maximum_time_required_for_prediction, prediction_thread):
+def calculate_and_publish_predictionsBack(application_state, app_instance_id, maximum_time_required_for_prediction, prediction_thread):
     
-    logging.info(f" entro en calculate_and_publish_predictions: application_state {application_state} app_instance_id {app_instance_id} application_state.start_forecasting {application_state.start_forecasting}")
+    logging.info(f"We are in calculate_and_publish_predictions: application_state {application_state} app_instance_id {app_instance_id} application_state.start_forecasting {application_state.start_forecasting}")
     
     application_state.start_forecasting
     
@@ -142,6 +142,7 @@ def calculate_and_publish_predictions(application_state, app_instance_id, maximu
         if there_is_modeling_data is not None and not there_is_modeling_data:
             print_with_time("IMPORTANT: There is NO data to TRAIN/CREATE the model! Application name: " + application_state.application_name)
             wait_time = AiadPredictorState.number_of_minutes_to_infer * 2 * 60
+            print_with_time("AiadPredictorState.number_of_minutes_to_infer " + str(AiadPredictorState.number_of_minutes_to_infer))
             print_with_time("Waiting for " + str(AiadPredictorState.number_of_minutes_to_infer * 2) + " minutes before creating / updating the model.")
             if (wait_time > 0):
                 time.sleep(wait_time)
@@ -326,6 +327,196 @@ def calculate_and_publish_predictions(application_state, app_instance_id, maximu
         logging.info(f'Removing prediction thread for {application_state.application_name} instance {app_instance_id} --> ident: {thread_ident}.')
         del prediction_thread[app_instance_id]
 
+
+def send_prediction_message(application_state, prediction, metrics, method="aiad nsa"):
+    """
+    Sends an anomaly message to the Artemis broker.
+    Used for both NSA and KMeans.
+    """
+    try:
+        current_time = int(time.time())
+        message_body = {
+            "method": method,
+            "level": 3,
+            "application": application_state.application_name,
+            "node": application_state.instance,
+            "timestamp": np.int64(current_time),
+            "predictionTime": np.int64(application_state.next_prediction_time),
+        }
+
+        if method == "aiad nsa":
+            message_body.update({
+                "window_start": np.int64(prediction["nsa_data"].index.min()),
+                "window_end": np.int64(prediction["nsa_data"].index.max()),
+                "window_anomaly_rate": prediction["nsa_window_anomaly_rate"],
+                "metrics": list(metrics),
+            })
+        elif method == "aiad kmeans":
+            message_body.update({
+                "window_start": np.int64(prediction["kmeans_data"].index.min()),
+                "window_end": np.int64(prediction["kmeans_data"].index.max()),
+                # value por cada métrica individual ya se pasa desde el bucle de KMeans
+                "window_anomaly_rate": prediction["kmeans_window_anomaly_rate"].get(metrics[0], None),
+                "metrics": metrics[0],
+            })
+
+        message_body = convert_to_native(message_body)
+
+        # Attempt to send
+        message_sent = False
+        while not message_sent:
+            try:
+                for publisher in AiadPredictorState.broker_publishers:
+                    if publisher.key == f"publisher_{application_state.application_name}-allmetrics":
+                        publisher.send(message_body, application_state.application_name)
+                        print_with_time(f"publisher.send ({method}) OK")
+                message_sent = True
+                print_with_time(f"Successfully sent {method.upper()} anomaly detection message for {application_state.application_name}:\n{message_body}\n")
+
+            except ConnectionError as exception:
+                logging.error(f"Error sending {method.upper()} anomaly detection: {exception}")
+                AiadPredictorState.disconnected = False
+                time.sleep(1)  # retry breve antes de reintentar envío
+
+    except Exception as e:
+        logging.error(f"Exception in send_prediction_message for {application_state.application_name}: {str(e)}")
+        print(traceback.format_exc())
+
+
+def calculate_and_publish_predictions(application_state, app_instance_id, maximum_time_required_for_prediction, prediction_thread):
+    logging.info(f"We are in calculate_and_publish_predictions: application_state {application_state} app_instance_id {app_instance_id} application_state.start_forecasting {application_state.start_forecasting}")
+    
+    application_state.start_forecasting
+    there_is_modeling_data = False
+    there_is_monitoring_data = False
+
+    while application_state.start_forecasting and (AiadPredictorState.ai_nsa or AiadPredictorState.ai_kmeans):
+        print_with_time("Using " + AiadPredictorState.configuration_file_location + " for configuration details...")
+
+        if ((application_state.previous_prediction is not None) and (
+                application_state.previous_prediction["last_prediction_time_needed"] > maximum_time_required_for_prediction)):
+            maximum_time_required_for_prediction = application_state.previous_prediction["last_prediction_time_needed"]
+
+        application_state.next_prediction_time = update_prediction_time(application_state.epoch_start,
+                                                                        application_state.prediction_horizon,
+                                                                        maximum_time_required_for_prediction)
+
+        # Wait before the next prediction
+        wait_time = application_state.next_prediction_time - application_state.prediction_horizon - time.time()
+        print_with_time("Waiting for " + str(
+            round(wait_time, 2)) + " seconds, until time " + datetime.datetime.fromtimestamp(
+            application_state.next_prediction_time - application_state.prediction_horizon).strftime('%Y-%m-%d %H:%M:%S'))
+        if wait_time > 0:
+            time.sleep(wait_time)
+
+        Utilities.load_configuration()
+
+        # =====================
+        # MODELING DATA
+        # =====================
+        if not AiadPredictorState.testing_functionality:     # in testing mode a namefile is hard code
+            there_is_modeling_data = application_state.update_model_data()
+        else:
+            there_is_modeling_data = True
+
+        if not there_is_modeling_data:
+            print_with_time(f"IMPORTANT: No TRAINING data for {application_state.application_name} instance {application_state.instance}. Exiting thread so monitor_and_rediscover can relaunch it.")
+            application_state.start_forecasting = False
+            break
+
+        columns_with_variability, scaler, myNSA, myKmeans = BuildingAModel(application_state, int(application_state.next_prediction_time))
+        if scaler is None and myNSA is None and myKmeans is None:
+            print_with_time(f"IMPORTANT: Model could not be built for {application_state.application_name}. Exiting thread.")
+            application_state.start_forecasting = False
+            break
+
+        # =====================
+        # MONITORING LOOP
+        # =====================
+        prediction_index = 0
+        while prediction_index < AiadPredictorState.total_time_intervals_to_predict and application_state.start_forecasting:
+            logging.info(f'Starting cycle for {application_state.application_name} instance {application_state.instance} (index {prediction_index}/{AiadPredictorState.total_time_intervals_to_predict})')
+            
+            if ((application_state.previous_prediction is not None) and (
+                    application_state.previous_prediction["last_prediction_time_needed"] > maximum_time_required_for_prediction)):
+                maximum_time_required_for_prediction = application_state.previous_prediction["last_prediction_time_needed"]
+
+            application_state.next_prediction_time = update_prediction_time(application_state.epoch_start,
+                                                                            application_state.prediction_horizon,
+                                                                            maximum_time_required_for_prediction)
+
+            wait_time = application_state.next_prediction_time - application_state.prediction_horizon - time.time()
+            print_with_time("Waiting for " + str(round(wait_time, 2)) + " seconds, until time " +
+                            datetime.datetime.fromtimestamp(application_state.next_prediction_time - application_state.prediction_horizon).strftime('%Y-%m-%d %H:%M:%S'))
+            if wait_time > 0:
+                time.sleep(wait_time)
+            
+            try:
+                prediction = None
+                if not AiadPredictorState.testing_functionality:     # in testing mode a namefile is hard code
+                    there_is_monitoring_data = application_state.update_monitoring_data()
+                else:
+                    there_is_monitoring_data = True
+
+                if not there_is_monitoring_data:
+                    print_with_time(f"IMPORTANT: No MONITORING data for {application_state.application_name} instance {application_state.instance}. Exiting thread so monitor_and_rediscover can relaunch it.")
+                    application_state.start_forecasting = False
+                    break
+
+                print_with_time(f"Initiating predictions for next_prediction_time={application_state.next_prediction_time} instance {application_state.instance} (index {prediction_index})")
+                prediction = TestingAModel(columns_with_variability, scaler, myNSA, myKmeans, application_state, int(application_state.next_prediction_time))
+
+            except Exception:
+                print_with_time(f"Could not create a prediction for {application_state.application_name}. Skipping interval {prediction_index}.")
+                print(traceback.format_exc())
+                break
+
+            if (AiadPredictorState.disconnected or AiadPredictorState.check_stale_connection()):
+                logging.info("Possible problem due to disconnection or stale connection")
+
+            any_anomaly_sent = False
+            if prediction is not None:
+                # =====================
+                # NSA anomalies
+                # =====================
+                logging.info(f'NSA prediction nsa_window_anomaly_rate {prediction["nsa_window_anomaly_rate"]} AiadPredictorState.ai_nsa_anomaly_rate {AiadPredictorState.ai_nsa_anomaly_rate}')
+                if AiadPredictorState.ai_nsa and "nsa_window_anomaly_rate" in prediction and prediction["nsa_window_anomaly_rate"] >= AiadPredictorState.ai_nsa_anomaly_rate:
+                    send_prediction_message(application_state, prediction, columns_with_variability, method="aiad nsa")
+                    any_anomaly_sent = True
+
+                # =====================
+                # KMEANS anomalies
+                # =====================
+                if AiadPredictorState.ai_kmeans and "kmeans_window_anomaly_rate" in prediction:
+                    for metric, value in prediction["kmeans_window_anomaly_rate"].items():
+                        logging.info(f'kmeans metric {metric} value {value} AiadPredictorState.ai_kmeans_anomaly_rate {AiadPredictorState.ai_kmeans_anomaly_rate}')
+                        if value > AiadPredictorState.ai_kmeans_anomaly_rate:
+                            send_prediction_message(application_state, prediction, [metric], method="aiad kmeans")
+                            any_anomaly_sent = True
+                
+                if not any_anomaly_sent:
+                    print_with_time(f"No anomaly message sent for {application_state.application_name} instance {application_state.instance}.")
+                    if "nsa_window_anomaly_rate" in prediction:
+                        print_with_time(f"NSA rate: {prediction['nsa_window_anomaly_rate']} (threshold {AiadPredictorState.ai_nsa_anomaly_rate})")
+                    if "kmeans_window_anomaly_rate" in prediction:
+                        print_with_time(f"KMeans rates: {prediction['kmeans_window_anomaly_rate']} (threshold {AiadPredictorState.ai_kmeans_anomaly_rate})")
+                
+                application_state.previous_prediction = prediction
+
+            logging.info(f'Ending cycle for {application_state.application_name} instance {application_state.instance} (index {prediction_index})')
+            prediction_index += 1
+
+    if not AiadPredictorState.ai_nsa and not AiadPredictorState.ai_kmeans:
+        logging.info("Please set either 'ai_nsa' or 'ai_kmeans' to True.")
+
+    # Final cleaning of the thread
+    if app_instance_id in prediction_thread:
+        thread = prediction_thread[app_instance_id]
+        thread_ident = thread.ident
+        logging.info(f'Removing prediction thread for {application_state.application_name} instance {app_instance_id} --> ident: {thread_ident}.')
+        del prediction_thread[app_instance_id]
+
+
 # class Listener(messaging.listener.MorphemicListener):
 class BootStrap(ConnectorHandler):
     pass
@@ -349,8 +540,7 @@ class ConsumerHandler:
 
                 if not AiadPredictorState.metric_list_received:
                     AiadPredictorState.metric_list_received = True
-                    delay = AiadPredictorState.number_of_minutes_to_infer
-                    delay = 0       # ELIMINAR ESTO PCF PPPPPPPPPPPPPPPPPPPPPPPPPP FFFFFFFFFFFFFFFFFFFFFFFFF
+                    delay = 0       # Don't wait for anything to start. PCF
                     threading.Timer(delay * 60, self.launch_application_threads).start()                    
                 else:
                     logging.info(f"[metric_list] Received another metric_list for {application_name} v{message_version}... it is NOT taken into account.")
@@ -358,7 +548,15 @@ class ConsumerHandler:
                 return
 
     def launch_application_threads(self):
-        logging.info("[launch] Launching application threads after delay...")
+        self.manage_application_threads(initial_launch=True)
+
+    def manage_application_threads(self, initial_launch=False):
+        """
+        Discovers instances and launches or relaunches the corresponding prediction threads.
+        If initial_launch=True, the initial launch is considered ([launch] messages).
+        """
+        tag = "[launch]" if initial_launch else "[monitor]"
+        logging.info(f"{tag} {'Launching' if initial_launch else 'Checking'} application threads...")
 
         for app_name, version in AiadPredictorState.received_applications.items():
             bucket = AiadPredictorState.application_name_prefix + app_name + "_bucket"
@@ -371,50 +569,15 @@ class ConsumerHandler:
             for inst_id in instances:
                 app_instance_id = f"{app_name}@{inst_id}"
 
-                if app_instance_id not in AiadPredictorState.prediction_thread or \
-                   not AiadPredictorState.prediction_thread[app_instance_id].is_alive():
+                thread_missing = (
+                    app_instance_id not in AiadPredictorState.prediction_thread or
+                    not AiadPredictorState.prediction_thread[app_instance_id].is_alive()
+                )
 
-                    logging.info(f"[launch] Starting prediction thread for {app_instance_id}")
-                    app_state = ApplicationState(app_name, version, inst_id)
-                    AiadPredictorState.applications_state[app_instance_id] = app_state
+                if thread_missing:
+                    msg = "Starting" if initial_launch else "Relaunching missing/dead"
+                    logging.info(f"{tag} {msg} prediction thread for {app_instance_id}")
 
-                    thread = threading.Thread(
-                        target=calculate_and_publish_predictions,
-                        args=(
-                            app_state,
-                            app_instance_id,
-                            AiadPredictorState.prediction_processing_time_safety_margin_seconds,
-                            AiadPredictorState.prediction_thread
-                        ),
-                        daemon=True
-                    )
-                    thread.start()
-                    AiadPredictorState.prediction_thread[app_instance_id] = thread
-                    
-                    time.sleep(30)     # To avoid saturation 30 seconds
-
-        # Programar la siguiente verificación periódica
-        interval = AiadPredictorState.number_of_minutes_to_detect_instances_or_check_everything_ok
-        threading.Timer(interval * 60, self.monitor_and_rediscover).start()
-
-    def monitor_and_rediscover(self):
-        logging.info("[monitor] Checking prediction threads and rediscovering instances...")
-
-        for app_name, version in AiadPredictorState.received_applications.items():
-            bucket = AiadPredictorState.application_name_prefix + app_name + "_bucket"
-            discovery = InstanceDiscovery(
-                influxdb_bucket=bucket,
-                influxdb_organization=AiadPredictorState.influxdb_organization
-            )
-            instances = discovery.get_all_instances(AiadPredictorState.number_of_days_to_use_data_from)
-
-            for inst_id in instances:
-                app_instance_id = f"{app_name}@{inst_id}"
-
-                if app_instance_id not in AiadPredictorState.prediction_thread or \
-                   not AiadPredictorState.prediction_thread[app_instance_id].is_alive():
-
-                    logging.warning(f"[monitor] Relaunching missing/dead thread for {app_instance_id}")
                     app_state = ApplicationState(app_name, version, inst_id)
                     AiadPredictorState.applications_state[app_instance_id] = app_state
 
@@ -431,11 +594,12 @@ class ConsumerHandler:
                     thread.start()
                     AiadPredictorState.prediction_thread[app_instance_id] = thread
 
-                    time.sleep(1.5)     # To avoid saturation
+                    # To avoid saturation 120 seconds
+                    time.sleep(120)
 
-        # Reprogramar esta función periódicamente
+        # Reschedule the next periodic check
         interval = AiadPredictorState.number_of_minutes_to_detect_instances_or_check_everything_ok
-        threading.Timer(interval * 60, self.monitor_and_rediscover).start()
+        threading.Timer(interval * 60, lambda: self.manage_application_threads(False)).start()
 
 
 def get_dataset_file(attribute):
