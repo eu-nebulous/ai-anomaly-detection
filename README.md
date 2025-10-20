@@ -1,103 +1,105 @@
-# Anomaly Detection Component
+# 🧠 Anomaly Detection Component
 
-The **Anomaly Detection** component identifies scenarios where resource utilization in Kubernetes-based applications deviates from expected behavior. It achieves this by analyzing metrics stored in **InfluxDB**.
+The **Anomaly Detection** component identifies deviations in network metrics within Kubernetes-based applications, using AI techniques to detect abnormal behavior.
 
-## How does the Anomaly Detection component work?
+## 🔍 Key Features
 
-**1** - Subscribes to monitoring.metric_list.
+- **Distributed detection**: runs threads per application instance.  
+- **AI-based modeling**: leverages the **Negative Selection Algorithm (NSA)** and **K-Means clustering**.  
+- **Adaptive configuration**: supports `.ini` files and environment variables.
 
-**2** - Receives a message containing:
+---
 
-	application name
-	
-	metrics (name, lower bound, upper bound)
+## ⚙️ How It Works
 
-**3** - Defines a topic to publishing results.
+1. **Subscription**: Subscribes to the `monitoring.metric_list` topic.  
+2. **Message Handling**: Receives the application name and version.  
+3. **Result Topic Setup**: Defines the topic for publishing anomaly detection results.  
+4. **Continuous Modeling & Monitoring Cycle**:
+   - Retrieves application instances (master and worker IDs) from InfluxDB.
+   - For each instance:
+     - Fetches network metrics with the `adt_` prefix.
+     - For each metric:
+       - Retrieves historical data.
+     - Filters out:
+       - Metrics with no variability.
+       - Metrics with low variance.
+       - Highly correlated metrics.
+     - Selects the **N most representative metrics** based on importance.
+     - Builds anomaly detection models:
+       - One **NSA model** for the representative metrics.
+       - One **K-Means model** per representative metric.
+     - Retrieves recent data for the current time window.
+     - Applies inference:
+       - NSA-based anomaly detection.
+       - K-Means-based anomaly detection per metric.
+     - Evaluates thresholds:
+       - If the **NSA anomaly rate** exceeds the threshold → publishes an incident.
+       - If the **K-Means anomaly rate** for any metric exceeds the threshold → publishes an incident.
 
-**4** - Starts a continuous cycle of modeling and monitoring the application.
+---
 
-**4.1** - Retrieves historical application data (metrics, days_to_use_data_from).
+## 📊 Monitored Metrics
 
-**4.2** - Builds anomaly detection models:
+All **network metrics** prefixed with `adt_`.
 
-		Creates the Negative Selection Algorithm (NSA) model for the set of metrics.
+---
 
-		Creates a k-means model for each individual metric.
-
-**4.3** - Retrieves recent application data (minutes_to_infer).
-
-**4.4** - Applies inference models to detect deviations.
-
-**4.5** - Checks if the anomaly_rate within the window exceeds a threshold:
-
-		Publishes an incident for further analysis and action
-
-## Metrics
-The component can monitor any specified **metric** through the **graphical user interface (GUI)** along with **lower_bound_value** and **upper_bound_value** constraints for each of the metrics.
-
-## Topics
+## 📨 Messaging Topics
 
 ### Subscriber Topic
 
-The subscription topic is `topic://eu.nebulouscloud.monitoring.metric_list`.
-
-The information received is:
-
+```text
+topic://eu.nebulouscloud.monitoring.metric_list
 ```
-- Application Name
-- Version
-- Metric List
-  - Name
-  - Lower Bound
-  - Upper Bound
-```
-  
-Example:
+
+**Message format:**
 
 ```json
 {
     "name": "Application",
-    "version": 1,
-    "metric_list": [
-        {"name": "system_cpu_user", "lower_bound": "-Infinity", "upper_bound": "Infinity"},
-        {"name": "system_ram_used", "lower_bound": "0.0", "upper_bound": "10000.0"},
-        {"name": "system_cpu_system", "lower_bound": "0.0", "upper_bound": "100.0"}
-    ]
+    "version": 1
 }
 ```
 
 ### Publisher Topic
 
-When the rate of deviations exceeds a threshold (anomaly_rate), an incident is published in `topic://eu.nebulouscloud.ad.aiad.allmetrics` for further analysis and action.
-
-For the NSA:
-
+```text
+topic://eu.nebulouscloud.ad.aiad.allmetrics
 ```
-message_body = {
-	"method": "aiad nsa",
-	"level": 3,
-	"application": application_name,
-	"timestamp": current_time,
-	"window_start": min_time,
-	"window_end": max_time,
-	"window_anomaly_rate": window_anomaly_rate,
-	"predictionTime": next_prediction_time,
-	"metrics": set of metrics
+
+Incidents are published when anomaly rates exceed predefined thresholds.
+
+#### NSA Message Example
+
+```json
+{
+    "method": "aiad nsa",
+    "level": 3,
+    "application": "application_name",
+    "node": "instance_id",
+    "timestamp": "current_time",
+    "window_start": "min_time",
+    "window_end": "max_time",
+    "window_anomaly_rate": "window_anomaly_rate",
+    "predictionTime": "next_prediction_time",
+    "metrics": ["metric1", "metric2", "..."]
 }
 ```
 
-For the k-means:
+#### K-Means Message Example
 
-```
-message_body = {
-	"method": "aiad kmeans",
-	"level": 3,
-	"application": application_name,
-	"timestamp": current_time,
-	"window_start": min_time,
-	"window_end": max_time,
-	"window_anomaly_rate": window_anomaly_rate,
-	"predictionTime": next_prediction_time,
-	"metrics": metric
-}		
+```json
+{
+    "method": "aiad kmeans",
+    "level": 3,
+    "application": "application_name",
+    "node": "instance_id",
+    "timestamp": "current_time",
+    "window_start": "min_time",
+    "window_end": "max_time",
+    "window_anomaly_rate": "window_anomaly_rate",
+    "predictionTime": "next_prediction_time",
+    "metrics": "metric_name"
+}
 ```
