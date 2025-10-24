@@ -373,6 +373,7 @@ def train_aiad(ai_nsa, ai_kmeans, data_filename, lower_bound_value, upper_bound_
     ai_kmeans_num_samples_to_smooth = config.getint('DEFAULT', 'ai_kmeans_num_samples_to_smooth')
     ai_kmeans_max_iterations = config.getint('DEFAULT', 'ai_kmeans_max_iterations')
     ai_kmeans_percentile_anomaly_score_threshold = config.getint('DEFAULT', 'ai_kmeans_percentile_anomaly_score_threshold')
+    ai_top_n_features = config.getint('DEFAULT', 'ai_top_n_features')
     lower_quantile = config.getfloat('DEFAULT', 'lower_quantile')
     upper_quantile = config.getfloat('DEFAULT', 'upper_quantile')
 
@@ -434,7 +435,7 @@ def train_aiad(ai_nsa, ai_kmeans, data_filename, lower_bound_value, upper_bound_
     train_data.drop(columns=high_corr_features, inplace=True, errors='ignore')
 
     # 4 Select the N most representative columns by importance
-    top_n_features = 10
+    top_n_features = ai_top_n_features
     if train_data.shape[1] > top_n_features:
         rf = RandomForestRegressor(n_estimators=50, random_state=42)
         rf.fit(train_data.fillna(0), np.arange(len(train_data)))
