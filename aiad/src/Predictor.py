@@ -23,7 +23,7 @@ from runtime.utilities.Utilities import Utilities
 
 from runtime.operational_status.AiadPredictorState import AiadPredictorState
 import numpy as np
-from influxdb_client import InfluxDBClient, Point
+from influxdb_client import InfluxDBClient, Point, WritePrecision
 from runtime.utilities.InfluxDBConnector import InfluxDBConnector
 
 print_with_time = Utilities.print_with_time
@@ -104,39 +104,59 @@ def convert_to_native(obj):
     return obj
 
 
-def write_prediction_to_influx(application_state, message_body):
+def write_prediction_to_influx(application_state, message_body, should_send):
     """
-    Save the prediction message (NSA or K-means) to the corresponding application bucket.
+    Save the anomaly prediction message (NSA or K-Means) to the corresponding application bucket.
     """
+    influx = None
     try:
         influx = InfluxDBConnector()
 
-        # Crear un Point con la información del mensaje
+        metrics_value = message_body["metrics"]
+        if isinstance(metrics_value, list):
+            metrics_value = ",".join(metrics_value)
+
+        if message_body["method"] == "aiad nsa":
+            measurement_name = f"_predicted_{message_body['method'].replace(' ', '_')}_{message_body['node']}"
+        elif message_body["method"] == "aiad kmeans":
+            measurement_name = f"_predicted_{message_body['method'].replace(' ', '_')}_{message_body['node']}_{metrics_value}"
+
         point = (
-            Point("aiad")
-            .tag("method", message_body["method"])
-            .tag("application", message_body["application"])
+            Point(measurement_name)
+            .tag("application_name", message_body["application"])
             .tag("node", message_body["node"])
-            .tag("metrics", message_body["metrics"])
-            .field("timestamp", message_body["timestamp"])
-            .field("predictionTime", message_body["predictionTime"])
-            .field("window_start", message_body["window_start"])
-            .field("window_end", message_body["window_end"])
-            .field("window_anomaly_rate", float(message_body["window_anomaly_rate"]))
+            .tag("method", message_body["method"])
+            .tag("metrics", metrics_value)
+            .tag("level", str(message_body["level"]))
+            .field("metricValue", float(message_body["window_anomaly_rate"]))
+            .field("anomaly", should_send)
+            .field("predictionTime", int(message_body["predictionTime"]))
+            .field("window_start", int(message_body["window_start"]))
+            .field("window_end", int(message_body["window_end"]))
         )
+        point.time(int(message_body["timestamp"]), write_precision=WritePrecision.S)
 
         influx.write_data(point, application_state.influxdb_bucket)
-        influx.close()
-
-        logging.info(f"[InfluxDB] Saved anomaly to bucket={application_state.influxdb_bucket} | method={message_body['method']} | metrics={message_body['metrics']}")
+        logging.info(
+            f"[InfluxDB] Saved anomaly | app={message_body['application']} | node={message_body['node']} | "
+            f"method={message_body['method']} | rate={message_body['window_anomaly_rate']:.2f} | "
+            f"metrics={message_body['metrics']}"
+        )
 
     except Exception as e:
         logging.error(f"Error writing prediction to InfluxDB: {e}")
+    finally:
+        if influx:
+            try:
+                influx.close()
+            except Exception:
+                pass
 
 
-def send_prediction_message(application_state, prediction, metrics, method="aiad nsa"):
+def send_prediction_message(application_state, prediction, metrics, method="aiad nsa", force_influx=False):
     """
-    Sends an anomaly message to the Artemis broker. Used for both NSA and KMeans.
+    Sends an anomaly message to the Artemis broker and always stores it in InfluxDB.
+    If force_influx=True, the message is written to InfluxDB even if not sent to the broker.
     """
     try:
         current_time = int(time.time())
@@ -160,31 +180,46 @@ def send_prediction_message(application_state, prediction, metrics, method="aiad
             message_body.update({
                 "window_start": np.int64(prediction["kmeans_data"].index.min()),
                 "window_end": np.int64(prediction["kmeans_data"].index.max()),
-                # value por cada métrica individual ya se pasa desde el bucle de KMeans
                 "window_anomaly_rate": prediction["kmeans_window_anomaly_rate"].get(metrics[0], None),
                 "metrics": metrics[0],
             })
 
         message_body = convert_to_native(message_body)
 
-        # Attempt to send
-        message_sent = False
-        while not message_sent:
-            try:
-                for publisher in AiadPredictorState.broker_publishers:
-                    if publisher.key == f"publisher_{application_state.application_name}-allmetrics":
-                        publisher.send(message_body, application_state.application_name)
-                        print_with_time(f"publisher.send ({method}) OK")
-                message_sent = True
-                print_with_time(f"Successfully sent {method.upper()} anomaly detection message for {application_state.application_name}:\n{message_body}\n")
+        should_send = False
+        if method == "aiad nsa":
+            should_send = message_body["window_anomaly_rate"] >= AiadPredictorState.ai_nsa_anomaly_rate
+        elif method == "aiad kmeans":
+            should_send = message_body["window_anomaly_rate"] >= AiadPredictorState.ai_kmeans_anomaly_rate
 
-                # Save also in InfluxDB
-                write_prediction_to_influx(application_state, message_body)
+        if should_send:
+            max_retries = 5
+            retry_count = 0
+            message_sent = False
 
-            except ConnectionError as exception:
-                logging.error(f"Error sending {method.upper()} anomaly detection: {exception}")
-                AiadPredictorState.disconnected = False
-                time.sleep(1)  # retry breve antes de reintentar envío
+            while not message_sent and retry_count < max_retries:
+                try:
+                    for publisher in AiadPredictorState.broker_publishers:
+                        if publisher.key == f"publisher_{application_state.application_name}-allmetrics":
+                            publisher.send(message_body, application_state.application_name)
+                            print_with_time(f"publisher.send ({method}) OK")
+
+                    message_sent = True
+                    print_with_time(f"Successfully sent {method.upper()} anomaly detection message for {application_state.application_name}:\n{message_body}\n")
+
+                except ConnectionError as exception:
+                    retry_count += 1
+                    logging.error(f"Error sending {method.upper()} anomaly detection (attempt {retry_count}/{max_retries}): {exception}")
+                    AiadPredictorState.disconnected = False
+                    time.sleep(2)  # wait before retrying
+
+            if not message_sent:
+                logging.error(f"Failed to send {method.upper()} message after {max_retries} attempts for {application_state.application_name}. Skipping.")
+        else:
+            logging.info(f"[Broker skipped] {method.upper()} anomaly rate below threshold.")
+            
+        # Save in InfluxDB
+        write_prediction_to_influx(application_state, message_body, should_send)
 
     except Exception as e:
         logging.error(f"Exception in send_prediction_message for {application_state.application_name}: {str(e)}")
@@ -288,9 +323,11 @@ def calculate_and_publish_predictions(application_state, app_instance_id, maximu
                 # NSA anomalies
                 # =====================
                 logging.info(f'NSA prediction nsa_window_anomaly_rate {prediction["nsa_window_anomaly_rate"]} AiadPredictorState.ai_nsa_anomaly_rate {AiadPredictorState.ai_nsa_anomaly_rate}')
-                if AiadPredictorState.ai_nsa and "nsa_window_anomaly_rate" in prediction and prediction["nsa_window_anomaly_rate"] >= AiadPredictorState.ai_nsa_anomaly_rate:
+                #if AiadPredictorState.ai_nsa and "nsa_window_anomaly_rate" in prediction and prediction["nsa_window_anomaly_rate"] >= AiadPredictorState.ai_nsa_anomaly_rate:
+                if AiadPredictorState.ai_nsa and "nsa_window_anomaly_rate" in prediction:
                     send_prediction_message(application_state, prediction, columns_with_variability, method="aiad nsa")
-                    any_anomaly_sent = True
+                    if prediction["nsa_window_anomaly_rate"] >= AiadPredictorState.ai_nsa_anomaly_rate:
+                        any_anomaly_sent = True
 
                 # =====================
                 # KMEANS anomalies
@@ -298,8 +335,8 @@ def calculate_and_publish_predictions(application_state, app_instance_id, maximu
                 if AiadPredictorState.ai_kmeans and "kmeans_window_anomaly_rate" in prediction:
                     for metric, value in prediction["kmeans_window_anomaly_rate"].items():
                         logging.info(f'kmeans metric {metric} value {value} AiadPredictorState.ai_kmeans_anomaly_rate {AiadPredictorState.ai_kmeans_anomaly_rate}')
+                        send_prediction_message(application_state, prediction, [metric], method="aiad kmeans")
                         if value > AiadPredictorState.ai_kmeans_anomaly_rate:
-                            send_prediction_message(application_state, prediction, [metric], method="aiad kmeans")
                             any_anomaly_sent = True
                 
                 if not any_anomaly_sent:
@@ -449,7 +486,6 @@ def main():
             AiadPredictorState.broker_consumers.append(current_consumer)
             current_consumers.append(current_consumer)
         AiadPredictorState.subscribing_connector = connector.EXN(AiadPredictorState.forecaster_name, handler=BootStrap(),
-                                                                 # consumers=list(State.broker_consumers),
                                                                  consumers=AiadPredictorState.broker_consumers,
                                                                  url=AiadPredictorState.broker_address,
                                                                  port=AiadPredictorState.broker_port,

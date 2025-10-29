@@ -2,42 +2,46 @@
 
 The **Anomaly Detection** component monitors network metrics of Kubernetes-based applications (prefix `adt_`) and flags deviations from learned “normal” behaviour. It is implemented as a modular component that integrates with NebulOuS via the monitoring data bus and uses in-memory models per application instance.
 
+The component runs as a lightweight edge service within the NebulOuS Meta-OS, continuously monitoring active application instances.
+
 ## 🔍 Key Features
 - **Distributed detection**: Multi-threaded per-instance metric collection and inference.
 - **Dual AI anomaly detection strategies**: Negative Selection Algorithm (NSA) and K-Means clustering.
 - **Adaptive configuration**: Fully configurable via `.ini` file and environment variables (supporting edge deployment and dynamic switching).
-- **Persistence and messaging**: InfluxDB for storage and Artemis broker for real-time alerting.
+- **Persistence and messaging**: InfluxDB for storage, and Artemis broker for real-time alerting.
 - **Traceability**: Each anomaly is persisted in the application bucket for later analysis and visualization.
 
 ## 🧩 Architecture & Workflow
 
 1. **Subscription**: Subscribes to the `topic://eu.nebulouscloud.monitoring.metric_list` topic.  
 2. **Message Handling**: Receives a metric_list message with the application name and version. An entry is added in AiadPredictorState.received_applications
-3. **Result Topic Setup**: Defines the `topic://eu.nebulouscloud.ad.aiad.allmetrics` topic for publishing anomaly detection results.  
+3. **Result Topic Setup**: Publishes anomaly detection results to the `topic://eu.nebulouscloud.ad.aiad.allmetrics` topic.
 4. **Continuous Modeling & Monitoring Cycle**:
    - Retrieves application instances (master and worker IDs) from InfluxDB.
-   - For each instance:
-     - Fetches network metrics with the `adt_` prefix.
-     - For each metric:
-       - Retrieves historical data.
-     - Filters out:
-       - Non-variable or low-variance metrics.
-       - Highly correlated metrics.
-     - Selects the **N most representative metrics** based on importance.
-     - Builds anomaly detection models:
-       - One **NSA model** for the representative metrics.
-       - One **K-Means model** per representative metric.
-     - Retrieves recent metric data for the current time window.
-     - Applies inference:
-       - NSA-based anomaly detection for representative metrics as a whole.
-       - K-Means-based anomaly detection per metric.
-     - Evaluates thresholds:
-       - If the **NSA anomaly rate** exceeds the defined NSA threshold → publishes an incident and stores in InfluxDB under the same application bucket for persistence and traceability.
-       - If the **K-Means anomaly rate** for any metric exceeds the defined K-Means threshold → publishes an incident and stores in InfluxDB under the same application bucket for persistence and traceability.
+   - Cycle N intervals:
+     - For each instance:
+       - Fetches network metrics with the `adt_` prefix.
+       - For each metric:
+         - Retrieves historical data.
+       - Filters out:
+         - Non-variable or low-variance metrics.
+         - Highly correlated metrics.
+       - Selects the **N most representative metrics** based on importance.
+       - Builds anomaly detection models:
+         - One **NSA model** for the representative metrics.
+         - One **K-Means model** per representative metric.
+       - Retrieves recent metric data for the current time window.
+       - Applies inference:
+         - NSA-based anomaly detection for representative metrics as a whole.
+         - K-Means-based anomaly detection per metric.
+       - Evaluates thresholds:
+         - If the **NSA anomaly rate** exceeds the defined NSA threshold → publishes an incident and stores in InfluxDB under the same application bucket for persistence and traceability.
+         - If the **K-Means anomaly rate** for any metric exceeds the defined K-Means threshold → publishes an incident and stores in InfluxDB under the same application bucket for persistence and traceability.
+   This cycle repeats periodically, ensuring continuous adaptation to workload dynamics.
 
 ## 📊 Monitored Metrics
 
-All **network.related metrics** prefixed with `adt_`.
+All **network metrics** prefixed with `adt_`.
 
 
 ## 📨 Messaging Topics
@@ -98,66 +102,46 @@ topic://eu.nebulouscloud.ad.aiad.allmetrics
 
 ## 💾 Anomaly Persistence in InfluxDB
 
-Each published anomaly detection (NSA or K-Means) is also stored in InfluxDB in the same bucket used by the monitored application. 
 
-This enables **historical tracking, visualization, and correlation** within NebulOuS dashboards.
+Each anomaly detection (NSA or K-Means) is automatically stored in **InfluxDB**, within the same bucket used by the monitored application.  
+This enables **historical tracking, visualization, and correlation** in NebulOuS dashboards.
 
-**InfluxDB Storage Details**
+### 🧠 InfluxDB Storage Details
 
-- **Bucket name**: nebulous_<application_name>_bucket
-
-- **Measurement**: aiad
-
-- **Tags**:
-
-	- method → "aiad nsa" or "aiad kmeans"
-
-	- application → application name (nebulous_<...>_bucket)
-
-	- node → instance ID
-
-- **Fields**:
-
-	- window_start (epoch)
-
-	- window_end (epoch)
-
-	- window_anomaly_rate (float)
-
-	- prediction_time (epoch)
-
-	- timestamp (epoch)
-
-	- metrics → a metric for K-Means / metrics for NSA	
+| Element         | Description                                                                                                                                                                                                                                                                                                                                             |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Bucket name** | `nebulous_<application_name>_bucket`                                                                                                                                                                                                                                                                                                                    |
+| **Measurement** | `_predicted_<method>_<instance>[_<metric>]`                                                                                                                                                                                                                                                                                                             |
+| **Tags**        | - `application` → application name (e.g., `<application_name>`)<br> - `node` → instance ID (e.g., `<instance>`)<br> - `method` → `"aiad nsa"` or `"aiad kmeans"`<br> - `metrics` → a single metric (K-Means) or list of metrics (NSA)<br> - `level` → the EMS level at which this metric value has been published (1,2 or 3)                            |
+| **Fields**      | - `window_start` → epoch timestamp (start of window)<br> - `window_end` → epoch timestamp (end of window)<br> - `metricValue` → anomaly rate as float<br> - `predictionTime` → epoch timestamp when prediction was made<br> - `anomaly` → `true` if metricValue exceeds the threshold, `false` otherwise<br> - `timestamp` → epoch timestamp of message |
 
 ---
 
-### **Example records**
+### 📊 Example Records
 
-- NSA
+#### NSA (Multivariate Detection)
 
-| time                 | method   | application      | node       | window_start | window_end | window_anomaly_rate | prediction_time | timestamp  | metrics                                                                                                                                                                                                                      |
-| -------------------- | -------- | ---------------- | ---------- | ------------ | ---------- | ------------------- | --------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 2025-10-14T11:20:11Z | aiad nsa | application_name | instance_1 | 1761295860   | 1761297960 | 21.88888888888889   | 1761302700      | 1761302411 | ['adt_cpu_system_dst_3', 'adt_cpu_system_dst_5', 'adt_net_in_dst_5', 'adt_cpu_user_dst_2', 'adt_ram_used_dst_4', 'adt_net_out_dst_4', 'adt_net_out_dst_5', 'adt_net_in_dst_2', 'adt_cpu_system_dst_2', 'adt_ram_used_dst_5'] |
+| time                 | measurement                    | method   | application      | node       | window_start | window_end | metricValue         | anomaly | predictionTime  | timestamp  | metrics                                                                                                                                                                                       |
+| -------------------- | ------------------------------ | -------- | ---------------- | ---------- | ------------ | ---------- | ------------------- | ------- | --------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 2025-10-14T11:20:11Z | _predicted_aiad_nsa_instance_1 | aiad nsa | application_name | instance_1 | 1761295860   | 1761297960 | 21.88888888888889   | true    | 1761302700      | 1761302411 | adt_cpu_system_dst_3,adt_cpu_system_dst_5,adt_net_in_dst_5,adt_cpu_user_dst_2,adt_ram_used_dst_4,adt_net_out_dst_4,adt_net_out_dst_5,adt_net_in_dst_2,adt_cpu_system_dst_2,adt_ram_used_dst_5 |
 
+#### K-Means (Univariate Detection)
 
-- K-Means
+| time                 | measurement                                          | method      | application      | node       | window_start | window_end | metricValue         | anomaly | predictionTime  | timestamp  | metrics            |
+| -------------------- | ---------------------------------------------------- | ----------- | ---------------- | ---------- | ------------ | ---------- | ------------------- | ------- | --------------- | ---------- | ------------------ |
+| 2025-10-14T11:20:11Z | _predicted_aiad_kmeans_instance_2_adt_ram_used_dst_2 | aiad kmeans | application_name | instance_2 | 1761295860   | 1761297960 | 20.555555555555555  | true    | 1761302700      | 1761302411 | adt_ram_used_dst_2 |
 
-| time                 | method      | application      | node       | window_start | window_end | window_anomaly_rate  | prediction_time | timestamp  | metrics            |
-| -------------------- | ----------- | ---------------- | ---------- | ------------ | ---------- | -------------------- | --------------- | ---------- | ------------------ |
-| 2025-10-14T11:20:11Z | aiad kmeans | application_name | instance_2 | 1761295860   | 1761297960 | 20.555555555555555   | 1761302700      | 1761302411 | adt_ram_used_dst_2 |
+---
 
+### 📝 Notes
 
-Notes
-
-* time is automatically set by InfluxDB.
-
-* For K-Means, metrics is a single string.
-
-* For NSA, it is a list of representative metrics.
-
-* All numeric fields are stored as numbers for aggregation and querying.
-
+* `time` is automatically set by **InfluxDB** when the record is written.
+* `metricValue` corresponds to the window anomaly rate.
+* `anomaly` is true if the value exceeded the configured detection threshold.
+* For **K-Means**, the `metrics` field contains a **single metric name**.
+* For **NSA**, it contains a **list of representative metrics** (comma-separated).
+* All numeric fields are stored as numbers, supporting aggregation and filtering in Flux queries.
+* This design ensures that **AIAD anomalies** can be visualized directly in NebulOuS dashboards alongside operational metrics — no schema changes required.
 
 Dual persistence (broker + InfluxDB) ensures:
 
@@ -174,10 +158,11 @@ Dual persistence (broker + InfluxDB) ensures:
 ```flux
 from(bucket: "nebulous_<application_name>_bucket")
   |> range(start: -24h)
-  |> filter(fn: (r) => r._measurement == "aiad")
-  |> filter(fn: (r) => r.application == "<application_name>")
+  |> filter(fn: (r) => r._measurement =~ /^_predicted_aiad_.*/)
+  |> filter(fn: (r) => r.application_name == "<application_name>")
   |> keep(columns: ["_time", "method", "node", "metrics", "_field", "_value"])
-  |> sort(columns: ["_time"], desc: true)
+  |> sort(columns: ["_time"], desc: true)  
+  
 ```
 
 ---
@@ -187,9 +172,8 @@ from(bucket: "nebulous_<application_name>_bucket")
 ```flux
 from(bucket: "nebulous_<application_name>_bucket")
   |> range(start: -6h)
-  |> filter(fn: (r) => r._measurement == "aiad")
-  |> filter(fn: (r) => r.method == "aiad kmeans")
-  |> filter(fn: (r) => r._field == "window_anomaly_rate" and r._value > 30.0)
+  |> filter(fn: (r) => r._measurement =~ /^_predicted_aiad_kmeans.*/)
+  |> filter(fn: (r) => r._field == "metricValue" and r._value > 30.0)
   |> keep(columns: ["_time", "node", "metrics", "_value"])
   |> rename(columns: {_value: "anomaly_rate"})
 ```
@@ -201,8 +185,7 @@ from(bucket: "nebulous_<application_name>_bucket")
 ```flux
 from(bucket: "nebulous_<application_name>_bucket")
   |> range(start: -12h)
-  |> filter(fn: (r) => r._measurement == "aiad")
-  |> filter(fn: (r) => r.method == "aiad nsa")
+  |> filter(fn: (r) => r._measurement =~ /^_predicted_aiad_nsa.*/)
   |> group(columns: ["node"])
   |> mean(column: "_value")
 ```
@@ -233,7 +216,7 @@ from(bucket: "nebulous_<application_name>_bucket")
   - Calculates distances to centroids and normalizes to detect anomalies.
 - **Thresholding**:
   - Compares anomaly rate to configured threshold to publish alerts.
-  - Persist anomalies exceeding threshold to InfluxDB alongside broker messages.
+  - All detections are persisted to InfluxDB, but only those exceeding the threshold are also published to the Artemis broker.
 
 ## 🗄️ Data Persistence & Logging
 - Metrics and anomalies stored in InfluxDB buckets: `nebulous_<application_name>_bucket`.
